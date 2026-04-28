@@ -1,0 +1,15 @@
+{
+    "name": "chess-analysis-backend",
+    "version": "1.0.0",
+    "description": "Backend local nativo para análisis de ajedrez",
+    "main": "service.js",
+    "type": "commonjs",
+    "scripts": {
+        "start": "node service.js"
+    },
+    "dependencies": {
+        "chess.js": "^1.4.0",
+        "ws": "^8.16.0",
+        "node-fetch": "^2.7.0"
+    }
+}
