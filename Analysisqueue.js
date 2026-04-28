@@ -143,7 +143,7 @@ class AnalysisQueue {
             // ── Opening detection (parallel) ──────────────────────────────
             const openingPromise = OpeningService.detectOpenings({
                 positions, history, gameId,
-                token: engineConfig.lichessToken,
+                token: engineConfig.lichessToken || process.env.LICHESS_TOKEN,
                 signal,
                 cache: this._cache,
                 onPlyResolved: (ply, isBook) => {

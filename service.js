@@ -10,6 +10,7 @@
  */
 
 'use strict';
+require('dotenv').config();
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
@@ -67,7 +68,7 @@ wss.on('connection', (ws) => {
                     onMoveResult: (data) => send({ type: 'move_result', ...data }),
                     onOpeningDetected: (data) => send({
                         type: 'opening_detected', ...data,
-                        bookPlies: Array.from(data.bookPlies)
+                        bookPlies: data.bookPlies ? Array.from(data.bookPlies) : []
                     }),
                     onComplete: (acc) => send({ type: 'complete', accuracy: acc }),
                     onError: (err) => send({ type: 'error', message: err.message }),

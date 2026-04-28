@@ -1,14 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const POSITION_CACHE_SIZE = 5000; 
-const OPENING_CACHE_SIZE = 100;   
+const POSITION_CACHE_SIZE = 5000;
+const OPENING_CACHE_SIZE = 100;
 const CACHE_FILE = path.join(__dirname, 'cache.json');
 
 class PositionCache {
     constructor() {
-        this._positions = new Map(); 
-        this._openings = new Map(); 
+        this._positions = new Map();
+        this._openings = new Map();
         this._saveTimer = null;
         this._loadFromDisk();
 
@@ -26,7 +26,18 @@ class PositionCache {
             if (fs.existsSync(CACHE_FILE)) {
                 const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
                 if (data.positions) this._positions = new Map(Object.entries(data.positions));
-                if (data.openings) this._openings = new Map(Object.entries(data.openings));
+
+                // RECONSTRUIMOS EL SET AL CARGAR
+                if (data.openings) {
+                    const parsedOpenings = new Map();
+                    for (const [key, val] of Object.entries(data.openings)) {
+                        parsedOpenings.set(key, {
+                            ...val,
+                            bookPlies: new Set(val.bookPlies || [])
+                        });
+                    }
+                    this._openings = parsedOpenings;
+                }
                 console.log(`[Cache] Loaded ${this._positions.size} positions and ${this._openings.size} openings from disk`);
             }
         } catch (e) {
@@ -44,9 +55,18 @@ class PositionCache {
 
     _saveToDiskImmediate() {
         try {
+            // CONVERTIMOS EL SET A ARRAY PARA GUARDAR EN EL JSON
+            const openingsToSave = {};
+            for (const [key, val] of this._openings.entries()) {
+                openingsToSave[key] = {
+                    ...val,
+                    bookPlies: Array.from(val.bookPlies)
+                };
+            }
+
             const data = {
                 positions: Object.fromEntries(this._positions),
-                openings: Object.fromEntries(this._openings),
+                openings: openingsToSave,
             };
             fs.writeFileSync(CACHE_FILE, JSON.stringify(data), 'utf8');
             console.log('[Cache] Persisted to disk');
