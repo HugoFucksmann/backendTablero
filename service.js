@@ -49,7 +49,7 @@ wss.on('connection', (ws) => {
             // ── Single position (live analysis while navigating moves) ──────────
             case 'analyze_position': {
                 console.log('Received analyze_position:', msg.multiPv);
-                const { fen, moveIndex, ...config } = msg;
+                const { fen, moveIndex, type: _type, ...config } = msg;
                 queue.analyzePosition(fen, moveIndex, config, {
                     onProgress: (data) => send({ type: 'position_progress', ...data }),
                     onResult: (data) => send({ type: 'position_result', ...data }),

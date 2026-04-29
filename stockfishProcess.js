@@ -1,303 +1,339 @@
 'use strict';
 
 /**
- * StockfishProcess
- * ─────────────────
- * Manages a single native Stockfish binary via stdin/stdout.
- * Mirror of the browser stockfishService.js but using child_process instead of Worker.
+ * stockfishProcess.js
+ * ────────────────────
+ * Responsibility: UCI protocol + serialised analysis queue.
  *
- * Lifecycle:
- *   const sf = new StockfishProcess();
- *   await sf.init(config);
- *   sf.newGame();
- *   const result = await sf.analyzePosition(fen, depth, signal, onProgress, multiPv);
- *   sf.destroy();
+ * Uses:
+ *   - EngineProcess  (engineProcess.js) for OS-level process management
+ *   - parseInfoLine / parseBestmoveLine (uciParser.js) for output parsing
+ *
+ * Public API:
+ *   await sf.init(config)
+ *   sf.newGame()
+ *   const result = await sf.analyzePosition(fen, depth, signal, onProgress, multiPv)
+ *   await sf.stopAndWait()
+ *   sf.stop()       — fire-and-forget
+ *   sf.destroy()
+ *
+ * Core design rules:
+ *   1. `_idlePromise` resolves ONLY when `bestmove` arrives — never earlier.
+ *      This guarantees the engine is truly idle before the next command batch.
+ *   2. Abort sends `stop`; the abort caller is rejected immediately but the
+ *      queue is released only after the engine emits `bestmove`.
+ *   3. `setoption` commands are sent only while IDLE, always followed by
+ *      `isready` / `readyok` before `go` — strict UCI compliance.
+ *   4. Config merges onto the CURRENT config (not DEFAULT_CONFIG) so re-calling
+ *      init({ multiPv: 3 }) does not accidentally reset threads/hash.
  */
 
-const { spawn } = require('child_process');
-
-const STOCKFISH_PATH = process.env.STOCKFISH_PATH || 'stockfish';
+const { EngineProcess, EngineState } = require('./engineProcess');
+const { parseInfoLine, parseBestmoveLine } = require('./uciParser');
 
 const DEFAULT_CONFIG = {
-    depth: 18,
+    threads: Math.max(1, require('os').cpus().length - 1),
+    hash:    128,
     multiPv: 1,
-    threads: Math.max(1, require('os').cpus().length - 1), // leave one core for Node
-    hash: 128, // MB — larger than WASM default (32)
+    depth:   18,
 };
 
 class StockfishProcess {
     constructor() {
-        this._proc = null;
-        this._ready = false;
-        this._initPromise = null;
-        this._config = { ...DEFAULT_CONFIG };
+        this._engine      = new EngineProcess();
+        this._config      = { ...DEFAULT_CONFIG };
+        this._initPromise = null;   // resolves when engine reaches IDLE after startup
 
-        // Serialise requests: next analysis waits for current one to finish
-        this._idleResolve = null;
+        // Serialisation: each analyzePosition awaits this before proceeding.
+        // Released only on `bestmove`.
         this._idlePromise = Promise.resolve();
+        this._idleResolve = null;
 
-        this._activeReject = null;
-        this._messageBuffer = '';
-        this._handler = null; // current line handler callback
+        // Wire up crash handler
+        this._engine.onDied = () => this._onEngineDied();
     }
 
-    // ── Init ────────────────────────────────────────────────────────────────
+    // ── Public: Lifecycle ────────────────────────────────────────────────────
 
+    /**
+     * Ensures the engine is alive and configured.
+     * Safe to call multiple times — idempotent when engine is already IDLE.
+     *
+     * Merges `config` onto the current config (not onto DEFAULT_CONFIG),
+     * so partial updates like { multiPv: 3 } never reset unrelated options.
+     *
+     * @param {Partial<typeof DEFAULT_CONFIG>} config
+     * @returns {Promise<void>}
+     */
     init(config = {}) {
-        const newConfig = { ...DEFAULT_CONFIG, ...config };
+        const merged = { ...this._config, ...config };
 
-        // If already initialized, update settings if they changed
-        if (this._initPromise && this._ready) {
-            const changed = JSON.stringify(newConfig) !== JSON.stringify(this._config);
-            if (changed) {
-                console.log('[Stockfish] Updating configuration:', config);
-                if (newConfig.threads !== this._config.threads) {
-                    this._send(`setoption name Threads value ${newConfig.threads}`);
+        // Already IDLE: apply any changed non-search options live
+        if (this._engine.state === EngineState.IDLE) {
+            const prev = this._config;
+            if (JSON.stringify(merged) !== JSON.stringify(prev)) {
+                // Apply hardware options only — multiPv is set per-search
+                if (merged.threads !== prev.threads) {
+                    this._engine.send(`setoption name Threads value ${merged.threads}`);
                 }
-                if (newConfig.hash !== this._config.hash) {
-                    this._send(`setoption name Hash value ${newConfig.hash}`);
+                if (merged.hash !== prev.hash) {
+                    this._engine.send(`setoption name Hash value ${merged.hash}`);
                 }
-                if (newConfig.multiPv !== this._config.multiPv) {
-                    this._send(`setoption name MultiPV value ${newConfig.multiPv}`);
-                }
-                this._config = newConfig;
-                this._send('isready');
-                return this._initPromise;
+                this._config = merged;
             }
-            return this._initPromise;
+            return this._initPromise; // already resolved
         }
 
+        // Already starting — return the in-flight promise (deduplicate concurrent callers)
         if (this._initPromise) return this._initPromise;
 
-        this._config = newConfig;
-
-        this._initPromise = new Promise((resolve, reject) => {
-            try {
-                console.log(`[Stockfish] Spawning engine at: ${STOCKFISH_PATH}`);
-                this._proc = spawn(STOCKFISH_PATH, [], { stdio: ['pipe', 'pipe', 'pipe'] });
-            } catch (e) {
-                this._initPromise = null;
-                return reject(new Error(`Cannot spawn Stockfish at "${STOCKFISH_PATH}": ${e.message}`));
-            }
-
-            this._proc.stderr.on('data', (d) => {
-                console.error('[Stockfish STDERR]', d.toString().trim());
-            });
-
-            this._proc.on('error', (err) => {
-                console.error('[Stockfish] Process error:', err.message);
-                this.destroy();
-                reject(err);
-            });
-
-            this._proc.on('exit', (code) => {
-                if (code !== 0 && code !== null) {
-                    console.warn(`[Stockfish] Process exited with code ${code}`);
-                }
-                this._ready = false;
-                this._initPromise = null; // Important: allow re-init on next call
-                if (this._activeReject) {
-                    this._activeReject(new DOMException('Engine exited', 'AbortError'));
-                    this._activeReject = null;
-                }
-            });
-
-            // Accumulate stdout into lines
-            this._proc.stdout.on('data', (chunk) => {
-                this._messageBuffer += chunk.toString();
-                let newline;
-                while ((newline = this._messageBuffer.indexOf('\n')) !== -1) {
-                    const line = this._messageBuffer.slice(0, newline).trim();
-                    this._messageBuffer = this._messageBuffer.slice(newline + 1);
-                    if (line) this._onLine(line);
-                }
-            });
-
-            // Boot UCI handshake
-            if (this._proc.stdin.writable) {
-                this._proc.stdin.write('uci\n');
-            } else {
-                reject(new Error('Stockfish stdin is not writable'));
-            }
-
-            this._handler = (line) => {
-                if (line === 'uciok') {
-                    this._send(`setoption name Threads value ${this._config.threads}`);
-                    this._send(`setoption name Hash value ${this._config.hash}`);
-                    this._send(`setoption name MultiPV value ${this._config.multiPv}`);
-                    this._send('isready');
-                }
-                if (line === 'readyok' && !this._ready) {
-                    this._ready = true;
-                    this._handler = null;
-                    resolve();
-                }
-            };
-        });
-
+        // Engine is dead — spawn and handshake
+        this._config      = merged;
+        this._initPromise = this._spawnAndHandshake();
         return this._initPromise;
     }
 
     newGame() {
-        if (this._ready) this._send('ucinewgame');
+        if (this._engine.state === EngineState.IDLE) {
+            this._engine.send('ucinewgame');
+        }
     }
 
-    // ── Analyze ─────────────────────────────────────────────────────────────
-
     /**
-     * @param {string}   fen
-     * @param {number}   depth
-     * @param {AbortSignal|null} signal
-     * @param {Function|null}    onProgress  — called with partial results on each `info` line
-     * @param {number}   multiPv
+     * Analyses a single position and returns the final result.
+     *
+     * Serialisation: if the engine is currently searching, this call awaits
+     * `_idlePromise` (released by `bestmove`) before sending any commands.
+     *
+     * Cancellation via `signal.abort()`:
+     *   - The caller's promise is rejected immediately with AbortError.
+     *   - `stop` is sent to the engine.
+     *   - `_idlePromise` is NOT released here; it is released when `bestmove` arrives.
+     *     This ensures the next search only starts once the engine is truly idle.
+     *
+     * @param {string}        fen
+     * @param {number}        depth
+     * @param {AbortSignal}   signal
+     * @param {Function|null} onProgress
+     * @param {number|null}   multiPv
      * @returns {Promise<{score, mate, bestMove, pv, lines[]}>}
      */
     async analyzePosition(fen, depth, signal = null, onProgress = null, multiPv = null) {
         if (!fen || typeof fen !== 'string') throw new Error('Invalid FEN');
 
-        // Robustness: ensure process is alive
-        if (!this._proc || !this._ready) {
-            console.log('[Stockfish] Engine not ready, re-initializing…');
+        // Ensure engine is alive
+        if (this._engine.state === EngineState.DEAD) {
+            this._initPromise = null; // allow re-init after crash
             await this.init(this._config);
+        } else {
+            await this._initPromise;
         }
 
+        // Wait for any previous search to fully drain (bestmove received)
         const t0 = performance.now();
-        await this._idlePromise; // wait for any running search
-        const tWait = performance.now() - t0;
+        await this._idlePromise;
+        const tWait = Math.round(performance.now() - t0);
+
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (this._engine.state !== EngineState.IDLE) {
+            throw new Error(`Unexpected engine state before search: ${this._engine.state}`);
+        }
 
         const effectiveMultiPv = multiPv ?? this._config.multiPv;
 
         return new Promise((resolve, reject) => {
-            if (!this._ready) return reject(new Error('Stockfish not ready'));
-            if (signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
-
-            let finished = false;
-            this._activeReject = reject;
-
-            // Grab the idle slot
+            // Claim the idle slot synchronously (before any await)
             this._idlePromise = new Promise(r => { this._idleResolve = r; });
+            this._engine.state = EngineState.SEARCHING;
 
-            const cleanup = (err) => {
-                if (finished) return;
-                finished = true;
-                this._handler = null;
-                this._activeReject = null;
-                if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
+            const lines      = {};
+            let lastBestMove = '';
+            let settled      = false;
+
+            // ── settle: called at most once ───────────────────────────────────
+            const settle = (err, result) => {
+                if (settled) return;
+                settled = true;
                 signal?.removeEventListener('abort', onAbort);
                 const elapsed = Math.round(performance.now() - t0);
-                console.log(`[Stockfish] ${err ? 'Aborted' : 'Done'} in ${elapsed}ms (wait: ${Math.round(tWait)}ms) depth=${depth} fen=${fen.split(' ').slice(0, 2).join(' ')}`);
+                console.log(
+                    `[Stockfish] ${err ? 'Aborted' : 'Done'} | ` +
+                    `total=${elapsed}ms wait=${tWait}ms depth=${depth} ` +
+                    `fen=${fen.split(' ').slice(0, 2).join(' ')}`
+                );
+                if (err) reject(err);
+                else     resolve(result);
             };
 
+            // ── Abort handler ─────────────────────────────────────────────────
+            // Rejects the caller immediately but does NOT release _idlePromise.
+            // We must wait for the engine's `bestmove` response before allowing
+            // the next search to start (strict UCI compliance).
             const onAbort = () => {
-                this._send('stop');
-                cleanup(true);
-                reject(new DOMException('Aborted', 'AbortError'));
+                if (this._engine.state === EngineState.SEARCHING) {
+                    this._engine.state = EngineState.STOPPING;
+                    this._engine.send('stop');
+                }
+                settle(new DOMException('Aborted', 'AbortError'), null);
             };
             signal?.addEventListener('abort', onAbort);
 
-            // Per-line data
-            const lines = {};
-            let lastBestMove = '';
-
+            // ── Line handler for the search phase ─────────────────────────────
             const searchHandler = (line) => {
-                if (finished) return;
+                // `bestmove` ALWAYS releases the idle slot — even after abort.
+                const bm = parseBestmoveLine(line);
+                if (bm !== null) {
+                    lastBestMove = bm.bestMove || lastBestMove;
 
-                if (line.startsWith('info') && line.includes('score')) {
-                    const mpvMatch = line.match(/multipv (\d+)/);
-                    const depthMatch = line.match(/depth (\d+)/);
-                    const cpMatch = line.match(/score cp (-?\d+)/);
-                    const mateMatch = line.match(/score mate (-?\d+)/);
-                    const pvMatch = line.match(/ pv (.+)/);
-                    const idx = mpvMatch ? parseInt(mpvMatch[1]) : 1;
+                    // Engine is now truly idle
+                    this._engine.state    = EngineState.IDLE;
+                    this._engine.lineHandler = null;
+                    if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
 
+                    // Resolve caller only if not already settled (i.e. not aborted)
+                    if (!settled) {
+                        if (!lines[1]) {
+                            lines[1] = { multipv: 1, score: 0, mate: null, pv: '', move: lastBestMove };
+                        }
+                        settle(null, {
+                            score:    lines[1].score,
+                            mate:     lines[1].mate ?? null,
+                            bestMove: lastBestMove || lines[1].move,
+                            pv:       lines[1].pv,
+                            lines:    Object.values(lines).sort((a, b) => a.multipv - b.multipv),
+                        });
+                    }
+                    return;
+                }
+
+                // While stopping, ignore info lines (caller already rejected)
+                if (this._engine.state === EngineState.STOPPING) return;
+
+                const info = parseInfoLine(line);
+                if (info !== null) {
+                    const { multipv: idx, depth: d, score, mate, pv, move } = info;
                     if (!lines[idx]) lines[idx] = { multipv: idx, score: 0, mate: null, pv: '', move: '', depth: 0 };
 
-                    if (depthMatch) lines[idx].depth = parseInt(depthMatch[1]);
-                    if (cpMatch) lines[idx].score = parseInt(cpMatch[1]);
-                    if (mateMatch) { lines[idx].mate = parseInt(mateMatch[1]); lines[idx].score = 0; }
-                    if (pvMatch) {
-                        const pv = pvMatch[1].trim();
-                        lines[idx].pv = pv;
-                        lines[idx].move = pv.split(' ')[0];
-                    }
+                    lines[idx].depth = d;
+                    lines[idx].score = score;
+                    lines[idx].mate  = mate;
+                    lines[idx].pv    = pv;
+                    lines[idx].move  = move;
 
                     if (onProgress) {
                         onProgress({
-                            depth: lines[1]?.depth ?? 0,
-                            score: lines[1]?.score ?? 0,
-                            mate: lines[1]?.mate ?? null,
-                            bestMove: lines[1]?.move ?? '',
-                            lines: Object.values(lines).sort((a, b) => a.multipv - b.multipv),
+                            depth:    lines[1]?.depth    ?? 0,
+                            score:    lines[1]?.score    ?? 0,
+                            mate:     lines[1]?.mate     ?? null,
+                            bestMove: lines[1]?.move     ?? '',
+                            lines:    Object.values(lines).sort((a, b) => a.multipv - b.multipv),
                         });
                     }
                 }
-
-                if (line.startsWith('bestmove')) {
-                    const bm = line.split(' ')[1];
-                    if (bm && bm !== '(none)') lastBestMove = bm;
-                    if (!lines[1]) lines[1] = { multipv: 1, score: 0, mate: null, pv: '', move: lastBestMove };
-
-                    const result = {
-                        score: lines[1].score,
-                        mate: lines[1].mate ?? null,
-                        bestMove: lastBestMove || lines[1].move,
-                        pv: lines[1].pv,
-                        lines: Object.values(lines).sort((a, b) => a.multipv - b.multipv),
-                    };
-
-                    cleanup(false);
-                    resolve(result);
-                }
             };
 
-            // Send position + go
-            this._handler = (line) => {
+            // ── readyok handler: fires go ─────────────────────────────────────
+            // We always go through setoption + isready/readyok before each search.
+            // This ensures MultiPV is applied and acknowledged before `go`.
+            this._engine.lineHandler = (line) => {
                 if (line === 'readyok') {
-                    this._send(`position fen ${fen}`);
-                    this._send(`go depth ${depth}`);
-                    this._handler = searchHandler;
+                    // Check we weren't aborted during the isready round-trip
+                    if (signal?.aborted || this._engine.state === EngineState.STOPPING) {
+                        // Engine never started searching; release idle and settle
+                        this._engine.state = EngineState.IDLE;
+                        if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
+                        settle(new DOMException('Aborted', 'AbortError'), null);
+                        return;
+                    }
+                    this._engine.send(`position fen ${fen}`);
+                    this._engine.send(`go depth ${depth}`);
+                    this._engine.lineHandler = searchHandler;
                 }
             };
 
-            this._send(`setoption name MultiPV value ${effectiveMultiPv}`);
-            this._send('isready');
+            this._engine.send(`setoption name MultiPV value ${effectiveMultiPv}`);
+            this._engine.send('isready');
         });
     }
 
-    stop() {
-        if (this._proc) this._send('stop');
+    /**
+     * Sends `stop` and waits for the engine to become idle (bestmove received).
+     * @returns {Promise<void>}
+     */
+    async stopAndWait() {
+        if (this._engine.state === EngineState.SEARCHING) {
+            this._engine.state = EngineState.STOPPING;
+            this._engine.send('stop');
+        }
+        await this._idlePromise;
     }
 
-    destroy() {
-        if (this._proc) {
-            try { this._send('quit'); } catch { /* ignore */ }
-            this._proc.stdin.destroy();
-            this._proc.kill('SIGTERM');
-            this._proc = null;
+    /** Fire-and-forget stop — does not wait for bestmove. */
+    stop() {
+        if (this._engine.state === EngineState.SEARCHING) {
+            this._engine.state = EngineState.STOPPING;
+            this._engine.send('stop');
         }
-        this._ready = false;
-        this._initPromise = null;
-        this._handler = null;
+    }
 
+    /** Kills the engine immediately and resets all state. */
+    destroy() {
+        console.log('[Stockfish] destroy() called');
+        this._initPromise = null;
+
+        // Unblock any caller waiting on _idlePromise
         if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
         this._idlePromise = Promise.resolve();
 
-        if (this._activeReject) {
-            this._activeReject(new DOMException('Engine destroyed', 'AbortError'));
-            this._activeReject = null;
-        }
+        this._engine.kill(); // increments session id; stale exit events are ignored
     }
 
-    // ── Private ─────────────────────────────────────────────────────────────
+    // ── Private ───────────────────────────────────────────────────────────────
 
-    _send(cmd) {
-        if (this._proc?.stdin?.writable) {
-            this._proc.stdin.write(cmd + '\n');
-        }
+    /**
+     * Spawns the process and runs the UCI handshake.
+     * Returns a Promise that resolves when the engine reaches IDLE state.
+     */
+    async _spawnAndHandshake() {
+        await this._engine.spawn(); // throws if spawn fails
+
+        return new Promise((resolve, reject) => {
+            // Override onDied to also reject the init promise if engine dies during handshake
+            const prevOnDied    = this._engine.onDied;
+            this._engine.onDied = () => {
+                this._onEngineDied();
+                reject(new Error('Engine died during UCI handshake'));
+            };
+
+            this._engine.lineHandler = (line) => {
+                if (line === 'uciok') {
+                    this._engine.send(`setoption name Threads value ${this._config.threads}`);
+                    this._engine.send(`setoption name Hash value ${this._config.hash}`);
+                    this._engine.send(`setoption name MultiPV value ${this._config.multiPv}`);
+                    this._engine.send('isready');
+                }
+                if (line === 'readyok') {
+                    this._engine.state       = EngineState.IDLE;
+                    this._engine.lineHandler = null;
+                    this._engine.onDied      = prevOnDied; // restore normal handler
+                    resolve();
+                }
+            };
+
+            this._engine.send('uci');
+        });
     }
 
-    _onLine(line) {
-        if (this._handler) this._handler(line);
+    /** Called when the OS process exits unexpectedly (crash, OOM, etc.). */
+    _onEngineDied() {
+        this._initPromise = null;
+
+        // Unblock any caller waiting on idle so they can recover / re-init
+        if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
+        this._idlePromise = Promise.resolve();
+
+        // Restore onDied to default
+        this._engine.onDied = () => this._onEngineDied();
     }
 }
 
