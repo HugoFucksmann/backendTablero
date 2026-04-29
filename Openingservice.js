@@ -26,21 +26,7 @@ async function fetchWithTimeout(url, options, timeoutMs) {
 }
 
 const OpeningService = {
-    async detectOpenings({ positions, history, gameId, token, signal, cache, onPlyResolved, onOpeningDetected }) {
-        // 1. Intentar cargar desde caché
-        const cached = cache?.getOpening(gameId);
-        if (cached) {
-            console.log(`[Opening] Cargado desde caché: ${cached.openingName || 'Sin nombre'} (${cached.bookPlies.size} plies de libro)`);
-            for (let i = 0; i < history.length; i++) onPlyResolved(i, cached.bookPlies.has(i));
-            onOpeningDetected?.({
-                openingName: cached.openingName,
-                ecoCode: cached.ecoCode,
-                openingPly: cached.openingPly,
-                bookPlies: cached.bookPlies,
-            });
-            return;
-        }
-
+    async detectOpenings({ positions, history, gameId, token, signal, onPlyResolved, onOpeningDetected }) {
         console.log(`[Opening] Consultando a Lichess la apertura... (Token: ${token ? 'Sí' : 'No'})`);
         const maxPly = Math.min(history.length, MAX_BOOK_PLY);
         const bookPlies = new Set();
@@ -155,7 +141,6 @@ const OpeningService = {
 
         if (!signal?.aborted) {
             console.log(`[Opening] Búsqueda finalizada. Apertura detectada: ${finalOpeningName || 'Ninguna'} con ${bookPlies.size} jugadas de libro.`);
-            cache?.setOpening(gameId, { bookPlies, openingName: finalOpeningName, ecoCode: finalEcoCode, openingPly: lastTheoryPly });
             onOpeningDetected?.({ openingName: finalOpeningName, ecoCode: finalEcoCode, openingPly: lastTheoryPly, bookPlies });
         }
     }

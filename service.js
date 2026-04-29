@@ -15,12 +15,10 @@ require('dotenv').config();
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const { AnalysisQueue } = require('./Analysisqueue.js');
-const { PositionCache } = require('./PositionCache.js');
 
 const PORT = parseInt(process.env.PORT || '9001', 10);
 
-// Shared cache across all connections
-const positionCache = new PositionCache();
+// Shared cache removed
 
 // One AnalysisQueue per client connection (each gets its own Stockfish process)
 const server = http.createServer((_req, res) => {
@@ -32,7 +30,7 @@ const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {
     console.log('[Server] Client connected');
-    const queue = new AnalysisQueue(positionCache);
+    const queue = new AnalysisQueue();
 
     ws.on('message', async (raw) => {
         let msg;
@@ -50,8 +48,9 @@ wss.on('connection', (ws) => {
         switch (msg.type) {
             // ── Single position (live analysis while navigating moves) ──────────
             case 'analyze_position': {
-                const { fen, moveIndex, depth, multiPv } = msg;
-                queue.analyzePosition(fen, moveIndex, { depth, multiPv }, {
+                console.log('Received analyze_position:', msg.multiPv);
+                const { fen, moveIndex, ...config } = msg;
+                queue.analyzePosition(fen, moveIndex, config, {
                     onProgress: (data) => send({ type: 'position_progress', ...data }),
                     onResult: (data) => send({ type: 'position_result', ...data }),
                     onError: (err) => send({ type: 'error', message: err.message }),
@@ -80,14 +79,6 @@ wss.on('connection', (ws) => {
             case 'cancel': {
                 queue.cancel();
                 send({ type: 'cancelled' });
-                break;
-            }
-
-            // ── Cache management ────────────────────────────────────────────────
-            case 'clear_cache': {
-                const { gameId } = msg;
-                positionCache.clearGame(gameId);
-                send({ type: 'cache_cleared', gameId });
                 break;
             }
 

@@ -20,11 +20,7 @@ const { EvaluationEngine } = require('./Evaluationrules.js');
 const { OpeningService, MAX_BOOK_PLY } = require('./Openingservice.js');
 
 class AnalysisQueue {
-    /**
-     * @param {import('./PositionCache').PositionCache} cache
-     */
-    constructor(cache) {
-        this._cache = cache;
+    constructor() {
         this._sf = new StockfishProcess();
         this._ac = null;   // AbortController
         this.running = false;
@@ -59,14 +55,6 @@ class AnalysisQueue {
         const depth = config.depth ?? 18;
         const multiPv = config.multiPv ?? 3;
 
-        // Cache hit?
-        const cached = this._cache.getPosition(fen, depth, multiPv);
-        if (cached) {
-            onResult?.({ ...cached, moveIndex });
-            this.running = false;
-            return;
-        }
-
         try {
             await this._sf.init(config);
             if (signal.aborted) return;
@@ -95,7 +83,6 @@ class AnalysisQueue {
                     moveIndex,
                     lines: _mapLines(result.lines, isBlackTurn),
                 };
-                this._cache.setPosition(fen, depth, multiPv, final);
                 onResult?.(final);
             }
         } catch (e) {
@@ -145,7 +132,6 @@ class AnalysisQueue {
                 positions, history, gameId,
                 token: engineConfig.lichessToken || process.env.LICHESS_TOKEN,
                 signal,
-                cache: this._cache,
                 onPlyResolved: (ply, isBook) => {
                     bookStatus[ply] = isBook;
                     this._tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
@@ -175,8 +161,7 @@ class AnalysisQueue {
                 const d = isHighPri ? depth : Math.max(10, depth - 3);
                 const mpv = multiPv;
 
-                // Cache hit for this position?
-                let evalResult = this._cache.getPosition(fen, d, mpv);
+                let evalResult = null;
 
                 if (!evalResult) {
                     try {
@@ -190,7 +175,6 @@ class AnalysisQueue {
                             bestMove: raw.bestMove,
                             lines: _mapLines(raw.lines, isBlackTurn),
                         };
-                        this._cache.setPosition(fen, d, mpv, evalResult);
 
                     } catch (e) {
                         if (e.name === 'AbortError') break;
