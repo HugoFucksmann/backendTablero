@@ -1,14 +1,6 @@
 'use strict';
 
-/**
- * ChessMath — mirror of chessMath.js
- * Converts centipawn / mate scores into win probabilities and visual scores.
- */
 const ChessMath = {
-    /**
-     * Returns White's win probability (0–1).
-     * Uses the same sigmoid formula as the frontend.
-     */
     cpToWhiteWinProb(cp, mate, isBlackTurn) {
         if (mate !== null && mate !== undefined) {
             return (mate > 0) === !isBlackTurn ? 1.0 : 0.0;
@@ -17,10 +9,6 @@ const ChessMath = {
         return isBlackTurn ? 1 - prob : prob;
     },
 
-    /**
-     * Returns a clamped visual score in [-10, +10] from White's POV.
-     * Mate is represented as ±10.
-     */
     cpToVisualScore(cp, mate, isBlackTurn) {
         if (mate !== null && mate !== undefined) {
             const sign = mate > 0 ? 1 : -1;

@@ -1,32 +1,18 @@
 'use strict';
 
-/**
- * AnalysisQueue (server-side)
- * ───────────────────────────
- * Mirror of the browser analysisQueue.js.
- *
- * One instance is created per WebSocket client so each client has its own
- * Stockfish process and independent abort controller.
- *
- * The two public methods match the browser API:
- *   analyzeGame(history, currentIndex, gameId, engineConfig, callbacks)
- *   analyzePosition(fen, moveIndex, config, callbacks)
- */
-
-const { Chess } = require('chess.js');
 const { StockfishProcess } = require('./stockfishProcess');
 const { ChessMath } = require('./chessMath');
-const { EvaluationEngine } = require('./Evaluationrules.js');
-const { OpeningService, MAX_BOOK_PLY } = require('./Openingservice.js');
+const { EvaluationEngine } = require('./Evaluationrules');
+const { OpeningService } = require('./Openingservice');
+const { buildPositions, buildAnalysisOrder, mapLines } = require('./analysisUtils');
+const { MoveClassifier } = require('./MoveClassifier');
 
 class AnalysisQueue {
     constructor() {
         this._sf = new StockfishProcess();
-        this._ac = null;   // AbortController
+        this._ac = null;
         this.running = false;
     }
-
-    // ── Cancel ───────────────────────────────────────────────────────────────
 
     cancel() {
         this.running = false;
@@ -38,11 +24,10 @@ class AnalysisQueue {
     }
 
     destroy() {
+        console.log('[Engine] 🗑️ Destruyendo instancia de Stockfish');
         this.cancel();
         this._sf.destroy();
     }
-
-    // ── Live position (single FEN) ────────────────────────────────────────────
 
     async analyzePosition(fen, moveIndex, config = {}, callbacks = {}) {
         const { onProgress, onResult, onError } = callbacks;
@@ -69,21 +54,23 @@ class AnalysisQueue {
                         mate,
                         bestMove,
                         moveIndex,
-                        lines: _mapLines(lines, isBlackTurn),
+                        lines: mapLines(lines, isBlackTurn),
                     });
                 },
                 multiPv,
             );
 
             if (!signal.aborted) {
-                const final = {
-                    score: ChessMath.cpToVisualScore(result.score, result.mate, isBlackTurn),
+                const visualScore = ChessMath.cpToVisualScore(result.score, result.mate, isBlackTurn);
+                console.log(`[Live] 🎯 Posición: ${fen.split(' ')[0].slice(0, 20)}... | Depth: ${depth} | Score: ${visualScore}`);
+                
+                onResult?.({
+                    score: visualScore,
                     mate: result.mate,
                     bestMove: result.bestMove,
                     moveIndex,
-                    lines: _mapLines(result.lines, isBlackTurn),
-                };
-                onResult?.(final);
+                    lines: mapLines(result.lines, isBlackTurn),
+                });
             }
         } catch (e) {
             if (e.name !== 'AbortError') onError?.(e);
@@ -91,8 +78,6 @@ class AnalysisQueue {
             this.running = false;
         }
     }
-
-    // ── Full game analysis ────────────────────────────────────────────────────
 
     async analyzeGame(history, currentIndex, gameId, engineConfig = {}, callbacks = {}) {
         const {
@@ -102,10 +87,16 @@ class AnalysisQueue {
         this.cancel();
         if (!history || history.length === 0) return;
 
-        this._sf.destroy(); // fresh engine per game
+        this._sf.destroy();
         this._ac = new AbortController();
         const { signal } = this._ac;
         this.running = true;
+
+        const depth = engineConfig.depth ?? 18;
+        const multiPv = engineConfig.multiPv ?? 1;
+        const t0 = Date.now();
+
+        console.log(`[Game] 🚀 Iniciando análisis: id=${gameId} | ${history.length} jugadas | Depth: ${depth} | MultiPV: ${multiPv}`);
 
         onStatus?.(true);
         onProgress?.(0, 'Iniciando motores…');
@@ -116,7 +107,7 @@ class AnalysisQueue {
 
             this._sf.newGame();
 
-            const positions = _buildPositions(history);
+            const positions = buildPositions(history);
             const totalMoves = history.length;
 
             const evalResults = new Array(positions.length).fill(null);
@@ -127,7 +118,6 @@ class AnalysisQueue {
 
             const openingState = { done: false };
 
-            // ── Opening detection (parallel) ──────────────────────────────
             const openingPromise = OpeningService.detectOpenings({
                 positions, history, gameId,
                 token: engineConfig.lichessToken || process.env.LICHESS_TOKEN,
@@ -147,10 +137,7 @@ class AnalysisQueue {
                 }
             });
 
-            // ── Engine analysis (sequential, smart order) ─────────────────
-            const order = _buildAnalysisOrder(positions.length, currentIndex);
-            const depth = engineConfig.depth ?? 18;
-            const multiPv = engineConfig.multiPv ?? 1;
+            const order = buildAnalysisOrder(positions.length, currentIndex);
 
             for (const posIdx of order) {
                 if (signal.aborted) break;
@@ -159,54 +146,52 @@ class AnalysisQueue {
                 const isBlackTurn = fen.includes(' b ');
                 const isHighPri = posIdx === currentIndex || posIdx === currentIndex + 1;
                 const d = isHighPri ? depth : Math.max(10, depth - 3);
-                const mpv = multiPv;
 
-                let evalResult = null;
+                try {
+                    const raw = await this._sf.analyzePosition(fen, d, signal, null, multiPv);
+                    if (signal.aborted) break;
 
-                if (!evalResult) {
-                    try {
-                        const raw = await this._sf.analyzePosition(fen, d, signal, null, mpv);
-                        if (signal.aborted) break;
+                    const evalResult = {
+                        wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurn),
+                        score: ChessMath.cpToVisualScore(raw.score, raw.mate, isBlackTurn),
+                        mate: raw.mate,
+                        bestMove: raw.bestMove,
+                        lines: mapLines(raw.lines, isBlackTurn),
+                    };
 
-                        evalResult = {
-                            wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurn),
-                            score: ChessMath.cpToVisualScore(raw.score, raw.mate, isBlackTurn),
-                            mate: raw.mate,
-                            bestMove: raw.bestMove,
-                            lines: _mapLines(raw.lines, isBlackTurn),
-                        };
+                    evalResults[posIdx] = evalResult;
+                    evaluatedCount++;
 
-                    } catch (e) {
-                        if (e.name === 'AbortError') break;
-                        evalResult = { wp: 0.5, score: 0.0, mate: null, bestMove: null, lines: [] };
-                    }
+                    onMoveResult?.({
+                        index: posIdx === 0 ? -1 : posIdx - 1,
+                        score: evalResult.score,
+                        mate: evalResult.mate,
+                        bestMove: evalResult.bestMove,
+                        lines: evalResult.lines,
+                    });
+
+                    this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
+                    this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
+
+                    const pct = Math.round((evaluatedCount / totalMoves) * 100);
+                    onProgress?.(Math.min(99, pct), `Analizando (${pct}%)`);
+
+                } catch (e) {
+                    if (e.name === 'AbortError') break;
+                    console.error(`[AnalysisQueue] Engine error at ply ${posIdx}:`, e.message);
                 }
-
-                evalResults[posIdx] = evalResult;
-                evaluatedCount++;
-
-                // Emit score for this position
-                onMoveResult?.({
-                    index: posIdx === 0 ? -1 : posIdx - 1,
-                    score: evalResult.score,
-                    mate: evalResult.mate,
-                    bestMove: evalResult.bestMove,
-                    lines: evalResult.lines,
-                });
-
-                this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
-                this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
-
-                const pct = Math.round((evaluatedCount / totalMoves) * 100);
-                onProgress?.(Math.min(99, pct), `Analizando (${pct}%)`);
             }
 
             if (!signal.aborted) {
-                await openingPromise.catch(() => { /* opening errors are non-fatal */ });
+                await openingPromise.catch(() => { });
             }
 
             if (!signal.aborted) {
-                onComplete?.(EvaluationEngine.calculateAccuracy(finalMoveData));
+                const accuracy = EvaluationEngine.calculateAccuracy(finalMoveData);
+                const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                console.log(`[Game] ✅ Análisis completado en ${elapsed}s | Precisión: W:${accuracy.white}% B:${accuracy.black}%`);
+                
+                onComplete?.(accuracy);
                 onProgress?.(100, 'Análisis completado');
             }
 
@@ -218,68 +203,19 @@ class AnalysisQueue {
         }
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
-
     _tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult) {
-        if (ply < 0 || ply >= history.length || completedSet.has(ply)) return;
+        const result = MoveClassifier.classify({
+            ply, history, positions, evalResults, 
+            bookStatus, openingDone: openingState.done 
+        });
 
-        const before = evalResults[ply];
-        const after = evalResults[ply + 1];
-        if (!before || !after) return;
-
-        const openingResolved = bookStatus[ply] !== null || openingState.done || ply >= MAX_BOOK_PLY;
-        if (!openingResolved) return;
-
-        const isWhiteMove = !positions[ply].includes(' b ');
-        const movePlayed = history[ply];
-        const isEngineBest = before.bestMove === movePlayed.lan;
-        const isBook = bookStatus[ply] === true;
-
-        const label = isBook
-            ? 'Libro'
-            : EvaluationEngine.classifyMove(before.wp, after.wp, isWhiteMove, isEngineBest);
-
-        onMoveResult?.({ index: ply, label, isBook });
-
-        let wpLoss = isWhiteMove ? (before.wp - after.wp) : (after.wp - before.wp);
-        if (isEngineBest || wpLoss < 0) wpLoss = 0;
-
-        finalMoveData[ply] = { isWhiteMove, wpLoss, isBook };
-        completedSet.add(ply);
+        if (result && !completedSet.has(ply)) {
+            const { index, label, isBook, wpLoss, isWhiteMove } = result;
+            onMoveResult?.({ index, label, isBook });
+            finalMoveData[index] = { isWhiteMove, wpLoss, isBook };
+            completedSet.add(index);
+        }
     }
-}
-
-// ── Module-level helpers ──────────────────────────────────────────────────────
-
-function _buildPositions(history) {
-    const positions = [];
-    const game = new Chess();
-    positions.push(game.fen());
-    for (const m of history) {
-        // Accept either a move object with .lan/.san or a plain string
-        game.move(typeof m === 'string' ? m : (m.san ?? m.lan ?? m));
-        positions.push(game.fen());
-    }
-    return positions;
-}
-
-function _buildAnalysisOrder(total, currentIndex) {
-    const order = [];
-    const seen = new Set();
-    const add = (i) => { if (i >= 0 && i < total && !seen.has(i)) { order.push(i); seen.add(i); } };
-
-    if (currentIndex >= 0 && currentIndex < total - 1) { add(currentIndex); add(currentIndex + 1); }
-    if (currentIndex > 0) add(currentIndex - 1);
-    for (let i = 0; i < total; i++) add(i);
-    return order;
-}
-
-function _mapLines(lines, isBlackTurn) {
-    if (!Array.isArray(lines)) return [];
-    return lines.map(l => ({
-        ...l,
-        score: ChessMath.cpToVisualScore(l.score, l.mate ?? null, isBlackTurn),
-    }));
 }
 
 module.exports = { AnalysisQueue };

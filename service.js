@@ -1,14 +1,3 @@
-/**
- * Chess Analysis Server - Local WebSocket Backend
- * Replaces the browser WASM Stockfish with a native binary for maximum performance.
- *
- * Usage:
- *   STOCKFISH_PATH=/path/to/stockfish node server.js
- *   Options via env:
- *     PORT            - WebSocket port (default: 9001)
- *     STOCKFISH_PATH  - Path to Stockfish binary (default: ./stockfish)
- */
-
 'use strict';
 require('dotenv').config();
 
@@ -18,9 +7,6 @@ const { AnalysisQueue } = require('./Analysisqueue.js');
 
 const PORT = parseInt(process.env.PORT || '9001', 10);
 
-// Shared cache removed
-
-// One AnalysisQueue per client connection (each gets its own Stockfish process)
 const server = http.createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'chess-analysis-server', version: '1.0.0' }));
@@ -46,9 +32,7 @@ wss.on('connection', (ws) => {
         };
 
         switch (msg.type) {
-            // ── Single position (live analysis while navigating moves) ──────────
             case 'analyze_position': {
-                console.log('Received analyze_position:', msg.multiPv);
                 const { fen, moveIndex, type: _type, ...config } = msg;
                 queue.analyzePosition(fen, moveIndex, config, {
                     onProgress: (data) => send({ type: 'position_progress', ...data }),
@@ -58,7 +42,6 @@ wss.on('connection', (ws) => {
                 break;
             }
 
-            // ── Full game (post-game deep analysis) ─────────────────────────────
             case 'analyze_game': {
                 const { history, currentIndex, gameId, engineConfig } = msg;
                 queue.analyzeGame(history, currentIndex, gameId, engineConfig, {
@@ -75,7 +58,6 @@ wss.on('connection', (ws) => {
                 break;
             }
 
-            // ── Cancel any running analysis ─────────────────────────────────────
             case 'cancel': {
                 queue.cancel();
                 send({ type: 'cancelled' });
@@ -88,7 +70,7 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => {
-        console.log('[Server] Client disconnected — cleaning up');
+        console.log('[Server] Client disconnected');
         queue.cancel();
         queue.destroy();
     });
@@ -100,7 +82,6 @@ wss.on('connection', (ws) => {
 
 server.listen(PORT, '127.0.0.1', () => {
     console.log(`[Server] Chess analysis server listening on ws://127.0.0.1:${PORT}`);
-    console.log(`[Server] Stockfish binary: ${process.env.STOCKFISH_PATH || 'stockfish'}`);
 });
 
 process.on('SIGINT', () => { console.log('\n[Server] Shutting down...'); server.close(); process.exit(0); });

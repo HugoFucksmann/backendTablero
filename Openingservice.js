@@ -3,20 +3,19 @@
 const MAX_BOOK_PLY = 30;
 const MIN_THEORY_GAMES = 230_000;
 const MAX_MOVE_RANK = 6;
-const LICHESS_DELAY_MS = 600; // Increased delay slightly
+const LICHESS_DELAY_MS = 600;
 const LICHESS_TIMEOUT_MS = 10_000;
 const MAX_CONSECUTIVE_NONBOOK = 2;
-
 const RATINGS_PARAM = '1800,2000,2200,2500';
+
+const openingCache = new Map();
+const MAX_CACHE_SIZE = 100;
 
 async function fetchWithTimeout(url, options, timeoutMs) {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetch(url, {
-            ...options,
-            signal: controller.signal
-        });
+        const response = await fetch(url, { ...options, signal: controller.signal });
         clearTimeout(id);
         return response;
     } catch (e) {
@@ -27,7 +26,16 @@ async function fetchWithTimeout(url, options, timeoutMs) {
 
 const OpeningService = {
     async detectOpenings({ positions, history, gameId, token, signal, onPlyResolved, onOpeningDetected }) {
-        console.log(`[Opening] Consultando a Lichess la apertura... (Token: ${token ? 'Sí' : 'No'})`);
+        if (openingCache.has(gameId)) {
+            console.log(`[Opening] 📦 Usando caché para gameId: ${gameId}`);
+            const cache = openingCache.get(gameId);
+            for (let i = 0; i < history.length; i++) onPlyResolved(i, cache.bookPlies.has(i));
+            onOpeningDetected?.({ ...cache });
+            return;
+        }
+
+        console.log(`[Opening] 🌐 Consultando Lichess para gameId: ${gameId}`);
+
         const maxPly = Math.min(history.length, MAX_BOOK_PLY);
         const bookPlies = new Set();
         let consecutiveNonBook = 0;
@@ -45,11 +53,7 @@ const OpeningService = {
 
             const fenBeforeMove = positions[ply].split(' ').slice(0, 4).join(' ');
             const url = `https://explorer.lichess.ovh/lichess?fen=${encodeURIComponent(fenBeforeMove)}&ratings=${RATINGS_PARAM}`;
-
-            const headers = {
-                'User-Agent': 'ChessAnalysisLocalApp/1.0',
-                'Accept': 'application/json'
-            };
+            const headers = { 'User-Agent': 'ChessAnalysisLocalApp/1.0', 'Accept': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
             let retries = 2;
@@ -58,26 +62,14 @@ const OpeningService = {
             while (retries >= 0 && !success && !signal?.aborted) {
                 try {
                     const res = await fetchWithTimeout(url, { headers }, LICHESS_TIMEOUT_MS);
-
                     if (res.status === 429) {
-                        console.warn(`[Opening] 429 Lichess Saturado en ply ${ply}, esperando...`);
                         retries--;
                         if (retries >= 0) await delay(3000);
                         continue;
                     }
-
-                    if (res.status === 401) {
-                        console.error(`[Opening] ❌ 401 Unauthorized: Lichess requiere un token de API válido.`);
-                        throw new Error('Unauthorized');
-                    }
-
-                    if (!res.ok) {
-                        console.warn(`[Opening] API Lichess Rechazó la conexión: HTTP ${res.status}`);
-                        throw new Error(`HTTP ${res.status}`);
-                    }
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
                     const data = await res.json();
-
                     if (data.opening?.name) {
                         finalOpeningName = data.opening.name;
                         finalEcoCode = data.opening.eco ?? finalEcoCode;
@@ -105,27 +97,15 @@ const OpeningService = {
                     }
 
                     success = true;
-
                     if (consecutiveNonBook < MAX_CONSECUTIVE_NONBOOK && ply < maxPly - 1) {
                         await delay(LICHESS_DELAY_MS);
                     }
 
                 } catch (err) {
                     if (err.name === 'AbortError' || signal?.aborted) break;
-                    console.error(`[Opening] Error en ply ${ply}:`, err.message);
-                    
-                    if (err.message === 'Unauthorized') {
-                        // Si no hay autorización, dejamos de intentar para el resto de la partida
-                        for (let i = ply; i < maxPly; i++) onPlyResolved(i, false);
-                        success = true;
-                        consecutiveNonBook = MAX_CONSECUTIVE_NONBOOK;
-                        break;
-                    }
-
                     retries--;
-                    if (retries >= 0) {
-                        await delay(2000);
-                    } else {
+                    if (retries >= 0) await delay(2000);
+                    else {
                         for (let i = ply; i < maxPly; i++) onPlyResolved(i, false);
                         success = true;
                         consecutiveNonBook = MAX_CONSECUTIVE_NONBOOK;
@@ -140,8 +120,10 @@ const OpeningService = {
         }
 
         if (!signal?.aborted) {
-            console.log(`[Opening] Búsqueda finalizada. Apertura detectada: ${finalOpeningName || 'Ninguna'} con ${bookPlies.size} jugadas de libro.`);
-            onOpeningDetected?.({ openingName: finalOpeningName, ecoCode: finalEcoCode, openingPly: lastTheoryPly, bookPlies });
+            const result = { openingName: finalOpeningName, ecoCode: finalEcoCode, openingPly: lastTheoryPly, bookPlies };
+            if (openingCache.size >= MAX_CACHE_SIZE) openingCache.delete(openingCache.keys().next().value);
+            openingCache.set(gameId, result);
+            onOpeningDetected?.(result);
         }
     }
 };

@@ -1,19 +1,5 @@
 'use strict';
 
-/**
- * uciParser.js
- * ─────────────
- * Pure functions that parse individual Stockfish UCI output lines.
- * Zero side effects, zero state — safe to unit-test in isolation.
- */
-
-/**
- * Parses an `info ... score ...` line.
- * Returns null if the line does not carry score information.
- *
- * @param {string} line
- * @returns {{ multipv: number, depth: number, score: number, mate: number|null, pv: string, move: string } | null}
- */
 function parseInfoLine(line) {
     if (!line.startsWith('info') || !line.includes('score')) return null;
 
@@ -36,13 +22,6 @@ function parseInfoLine(line) {
     };
 }
 
-/**
- * Parses a `bestmove` line.
- * Returns null if the line is not a bestmove line.
- *
- * @param {string} line
- * @returns {{ bestMove: string } | null}
- */
 function parseBestmoveLine(line) {
     if (!line.startsWith('bestmove')) return null;
     const bm = line.split(' ')[1] ?? '';

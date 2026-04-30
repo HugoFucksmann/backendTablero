@@ -1,17 +1,6 @@
 'use strict';
 
-/**
- * EvaluationEngine — mirror of evaluationRules.js
- * Classifies individual moves and computes per-colour accuracy.
- */
 const EvaluationEngine = {
-    /**
-     * @param {number}  wpBefore        - White win probability before the move
-     * @param {number}  wpAfter         - White win probability after the move
-     * @param {boolean} isWhiteMove
-     * @param {boolean} isEngineBestMove
-     * @returns {string} Spanish label: 'Brillante' | 'Mejor' | 'Excelente' | 'Bueno' | 'Imprecisión' | 'Error' | 'Error grave'
-     */
     classifyMove(wpBefore, wpAfter, isWhiteMove, isEngineBestMove) {
         const rawWpLoss = isWhiteMove ? (wpBefore - wpAfter) : (wpAfter - wpBefore);
 
@@ -28,13 +17,6 @@ const EvaluationEngine = {
         return 'Error grave';
     },
 
-    /**
-     * Computes accuracy [0–100] for white and black separately.
-     * Uses the same blended arithmetic/harmonic mean formula as the frontend.
-     *
-     * @param {Array<{isWhiteMove, wpLoss, isBook}>} moveData
-     * @returns {{ white: number, black: number }}
-     */
     calculateAccuracy(moveData) {
         const calc = (moves) => {
             const valid = moves.filter(Boolean);
