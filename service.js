@@ -4,6 +4,8 @@ require('dotenv').config();
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const { AnalysisQueue } = require('./Analysisqueue.js');
+const { PuzzleExtractor } = require('./PuzzleExtractor.js');
+const { PuzzleStore } = require('./PuzzleStore.js');
 
 const PORT = parseInt(process.env.PORT || '9001', 10);
 
@@ -17,6 +19,7 @@ const wss = new WebSocketServer({ server });
 wss.on('connection', (ws) => {
     console.log('[Server] Client connected');
     const queue = new AnalysisQueue();
+    const puzzleExtractor = new PuzzleExtractor();
 
     ws.on('message', async (raw) => {
         let msg;
@@ -32,6 +35,7 @@ wss.on('connection', (ws) => {
         };
 
         switch (msg.type) {
+            // ── Analysis ─────────────────────────────────────────────────────
             case 'analyze_position': {
                 const { fen, moveIndex, type: _type, ...config } = msg;
                 queue.analyzePosition(fen, moveIndex, config, {
@@ -64,6 +68,52 @@ wss.on('connection', (ws) => {
                 break;
             }
 
+            // ── Puzzle Extraction ─────────────────────────────────────────────
+            case 'extract_puzzles': {
+                const { games, engineConfig = {} } = msg;
+                if (!Array.isArray(games) || games.length === 0) {
+                    send({ type: 'error', message: 'No games provided for puzzle extraction' });
+                    break;
+                }
+                send({ type: 'puzzle_extraction_started', totalGames: games.length });
+                puzzleExtractor.extractFromGames(games, engineConfig, {
+                    onGameDone: (data) => send({ type: 'puzzle_game_done', ...data }),
+                    onComplete: (data) => send({ type: 'puzzle_extraction_complete', ...data }),
+                    onError: (err) => send({ type: 'error', message: err.message }),
+                });
+                break;
+            }
+
+            case 'cancel_extraction': {
+                puzzleExtractor.cancel();
+                send({ type: 'extraction_cancelled' });
+                break;
+            }
+
+            // ── Puzzle Library ────────────────────────────────────────────────
+            case 'get_puzzles': {
+                const puzzles = PuzzleStore.getAll();
+                send({ type: 'puzzle_list', puzzles });
+                break;
+            }
+
+            case 'delete_puzzle': {
+                const deleted = PuzzleStore.delete(msg.id);
+                send({ type: 'puzzle_deleted', id: msg.id, success: deleted });
+                break;
+            }
+
+            case 'clear_puzzles': {
+                PuzzleStore.clear();
+                send({ type: 'puzzles_cleared' });
+                break;
+            }
+
+            case 'puzzle_solved': {
+                PuzzleStore.incrementSolved(msg.id);
+                break;
+            }
+
             default:
                 send({ type: 'error', message: `Unknown message type: ${msg.type}` });
         }
@@ -73,6 +123,8 @@ wss.on('connection', (ws) => {
         console.log('[Server] Client disconnected');
         queue.cancel();
         queue.destroy();
+        puzzleExtractor.cancel();
+        puzzleExtractor.destroy();
     });
 
     ws.on('error', (err) => {
