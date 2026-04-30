@@ -65,8 +65,21 @@ class PuzzleExtractor {
             for (let i = 0; i < games.length; i++) {
                 if (signal.aborted) break;
 
-                const { history, gameId } = games[i];
-                const extracted = await this._processGame(history, gameId, depth, signal);
+                const { pgn, history, gameId } = games[i];
+                let processedHistory = history;
+
+                if (!processedHistory && pgn) {
+                    try {
+                        const chess = new Chess();
+                        chess.loadPgn(pgn);
+                        processedHistory = chess.history({ verbose: true });
+                    } catch (e) {
+                        console.error(`[Puzzle] Error parsing PGN for game ${gameId}:`, e.message);
+                        continue; // Skip this game
+                    }
+                }
+
+                const extracted = await this._processGame(processedHistory, gameId, depth, signal);
                 totalExtracted += extracted;
 
                 console.log(`[Puzzle] ✅ Partida ${i + 1}/${games.length} completada | ${extracted} puzzle(s) extraído(s)`);
@@ -139,20 +152,26 @@ class PuzzleExtractor {
             const rawWpLoss = isWhiteMove ? (before.wp - after.wp) : (after.wp - before.wp);
             if (rawWpLoss < MIN_WP_LOSS_FOR_PUZZLE) continue;
 
-            // Build the solution sequence from the PV
-            const solutionSequence = before.pv
-                ? before.pv.trim().split(' ').slice(0, SOLUTION_DEPTH).filter(Boolean)
-                : (before.bestMove ? [before.bestMove] : []);
+            // The puzzle starts AFTER the blunder. The solver has to punish it.
+            const puzzleFen = positions[ply + 1];
+
+            // The best punishment comes from the PV calculated at the post-blunder position.
+            const solutionSequence = after.pv
+                ? after.pv.trim().split(' ').slice(0, SOLUTION_DEPTH).filter(Boolean)
+                : (after.bestMove ? [after.bestMove] : []);
 
             if (solutionSequence.length === 0) continue;
 
-            // Determine which color is solving
-            const playerColor = isWhiteMove ? 'white' : 'black';
+            // The solver is the OPPOSITE color of who blundered.
+            // If White just blundered (isWhiteMove=true), it's now Black's turn to punish.
+            const playerColor = isWhiteMove ? 'black' : 'white';
+
+            console.log(`[Puzzle] Found blunder at ply ${ply} | ${isWhiteMove ? 'White' : 'Black'} blundered '${movePlayed}' | Solver: ${playerColor} | Solution: ${solutionSequence.join(' ')}`);
 
             PuzzleStore.save({
-                fen: positions[ply],
-                solutionSequence,
-                playedMove: movePlayed,
+                fen: puzzleFen,         // Position AFTER the blunder
+                solutionSequence,       // Best response(s) from this position
+                playedMove: movePlayed, // Context: the move that was blundered
                 label,
                 wpLoss: parseFloat(rawWpLoss.toFixed(4)),
                 playerColor,

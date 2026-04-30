@@ -1,0 +1,64 @@
+{
+  "puzzles": [
+    {
+      "id": "ee94c93b-6e4c-4e86-b17f-5e673bfb7ca1",
+      "createdAt": "2026-04-30T16:14:26.534Z",
+      "solvedCount": 0,
+      "fen": "r1bq1rk1/1pp2pbp/p1np1np1/8/2BNP3/2N1B3/PPPQ1PPP/R4RK1 b - - 0 10",
+      "solutionSequence": [
+        "c6e5",
+        "c4e2",
+        "b7b5",
+        "e3g5",
+        "c7c5",
+        "d4b3"
+      ],
+      "playedMove": "b7b5",
+      "label": "Error grave",
+      "wpLoss": 0.3633,
+      "playerColor": "black",
+      "gameId": "168044737702",
+      "ply": 19
+    },
+    {
+      "id": "7268a103-1b55-4aa1-820a-b65ec654d46c",
+      "createdAt": "2026-04-30T16:14:26.534Z",
+      "solvedCount": 0,
+      "fen": "r4rk1/1bpq1pbp/p1Np1np1/1p1B4/4P3/2N1B3/PPPQ1PPP/R4RK1 w - - 3 13",
+      "solutionSequence": [
+        "c6e7",
+        "d7e7",
+        "d5b7",
+        "a8b8",
+        "c3d5",
+        "e7e5"
+      ],
+      "playedMove": "c6b4",
+      "label": "Error grave",
+      "wpLoss": 0.2384,
+      "playerColor": "white",
+      "gameId": "168044737702",
+      "ply": 24
+    },
+    {
+      "id": "e653f3ad-a78c-438c-8ec7-4b2aa60bb264",
+      "createdAt": "2026-04-30T16:14:26.534Z",
+      "solvedCount": 1,
+      "fen": "r4rk1/1bpq1pbp/p2p1np1/1p1B4/1N2P3/2N1B3/PPPQ1PPP/R4RK1 b - - 4 13",
+      "solutionSequence": [
+        "c7c6",
+        "d5c6",
+        "b7c6",
+        "f2f3",
+        "c6b7",
+        "b4d3"
+      ],
+      "playedMove": "b7d5",
+      "label": "Error grave",
+      "wpLoss": 0.2369,
+      "playerColor": "black",
+      "gameId": "168044737702",
+      "ply": 25
+    }
+  ]
+}
