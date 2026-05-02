@@ -6,15 +6,17 @@ const { ChessMath } = require('./chessMath');
 const { EvaluationEngine } = require('./evaluationRules');
 const { buildPositions } = require('./analysisUtils');
 const { PuzzleStore } = require('./puzzleStore');
+const { evaluatePuzzleCandidate } = require('./puzzleFilters');
 
-// Only moves with >= this wpLoss become puzzles
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Minimum WP loss for a move to even be considered as a puzzle candidate. */
 const MIN_WP_LOSS_FOR_PUZZLE = 0.15;
 
-// Labels that qualify as "interesting" mistakes
+/** Only these EvaluationEngine labels feed the puzzle pipeline. */
 const PUZZLE_LABELS = new Set(['Error', 'Error grave']);
 
-// How many moves deep we store the solution sequence from the PV
-const SOLUTION_DEPTH = 6;
+// ─────────────────────────────────────────────────────────────────────────────
 
 class PuzzleExtractor {
     constructor() {
@@ -41,7 +43,7 @@ class PuzzleExtractor {
      * Processes an array of game histories sequentially.
      * Emits progress callbacks to the caller (WebSocket handler).
      *
-     * @param {Array<{history: Array, gameId: string}>} games
+     * @param {Array<{history: Array, pgn?: string, gameId: string}>} games
      * @param {object} engineConfig  depth, threads, hash
      * @param {object} callbacks     onGameDone, onComplete, onError
      */
@@ -60,6 +62,8 @@ class PuzzleExtractor {
 
         try {
             this._sf.destroy();
+            // multiPv=2 is mandatory — the gap between lines 1 and 2 is how we
+            // detect whether a puzzle has a clear, unambiguous solution.
             await this._sf.init({ ...engineConfig, depth, multiPv: 2 });
 
             for (let i = 0; i < games.length; i++) {
@@ -75,14 +79,14 @@ class PuzzleExtractor {
                         processedHistory = chess.history({ verbose: true });
                     } catch (e) {
                         console.error(`[Puzzle] Error parsing PGN for game ${gameId}:`, e.message);
-                        continue; // Skip this game
+                        continue;
                     }
                 }
 
                 const extracted = await this._processGame(processedHistory, gameId, depth, signal);
                 totalExtracted += extracted;
 
-                console.log(`[Puzzle] Game ${i + 1}/${games.length} completed | ${extracted} puzzle(s) extracted`);
+                console.log(`[Puzzle] Game ${i + 1}/${games.length} done | ${extracted} puzzle(s) extracted`);
                 onGameDone?.({ gameIndex: i, total: games.length, extractedCount: extracted, totalExtracted });
             }
 
@@ -101,6 +105,8 @@ class PuzzleExtractor {
         }
     }
 
+    // ── Private ───────────────────────────────────────────────────────────────
+
     async _processGame(history, gameId, depth, signal) {
         if (!history || history.length === 0) return 0;
 
@@ -110,7 +116,7 @@ class PuzzleExtractor {
 
         this._sf.newGame();
 
-        // Analyze every position sequentially (silent mode — no WS events)
+        // ── Phase 1: analyze every position ──────────────────────────────────
         for (let i = 0; i < positions.length; i++) {
             if (signal.aborted) break;
 
@@ -118,62 +124,98 @@ class PuzzleExtractor {
             const isBlackTurn = fen.includes(' b ');
 
             try {
-                // multiPv=2 so we can compare best vs played move
                 const raw = await this._sf.analyzePosition(fen, depth, signal, null, 2);
                 if (signal.aborted) break;
 
+                // Store everything the filter layer will need.
                 evalResults[i] = {
+                    // Win probability (White perspective, 0..1)
                     wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurn),
+                    // Engine's best move and full PV from this position
                     bestMove: raw.bestMove,
-                    pv: raw.lines?.[0]?.pv ?? '',   // principal variation string from line 1
+                    pv: raw.lines?.[0]?.pv ?? '',
+                    // Raw mate value: positive = side-to-move has forced mate
+                    mate: raw.mate ?? null,
+                    // Raw centipawn scores for both lines (needed for gap / ambiguity check)
+                    line1Score: raw.lines?.[0]?.score ?? raw.score ?? 0,
+                    line2Score: raw.lines?.[1]?.score ?? null,
                 };
             } catch (e) {
                 if (e.name === 'AbortError') break;
-                evalResults[i] = { wp: 0.5, bestMove: null, pv: '' };
+                // Neutral fallback so we don't crash the whole game
+                evalResults[i] = { wp: 0.5, bestMove: null, pv: '', mate: null, line1Score: 0, line2Score: null };
             }
         }
 
-        // Scan results to identify mistakes and build puzzles
+        // ── Phase 2: scan for tactical mistakes ───────────────────────────────
         for (let ply = 0; ply < history.length; ply++) {
             if (signal.aborted) break;
 
             const before = evalResults[ply];
-            const after  = evalResults[ply + 1];
+            const after = evalResults[ply + 1];
             if (!before || !after) continue;
 
             const isWhiteMove = !positions[ply].includes(' b ');
-            const movePlayed  = typeof history[ply] === 'string' ? history[ply] : (history[ply].lan ?? history[ply].san);
+            const movePlayed = typeof history[ply] === 'string'
+                ? history[ply]
+                : (history[ply].lan ?? history[ply].san);
             const isEngineBest = before.bestMove === movePlayed;
 
+            // Fast pre-filter: only process moves the engine flagged as mistakes
             const label = EvaluationEngine.classifyMove(before.wp, after.wp, isWhiteMove, isEngineBest);
-
             if (!PUZZLE_LABELS.has(label)) continue;
 
-            const rawWpLoss = isWhiteMove ? (before.wp - after.wp) : (after.wp - before.wp);
+            const rawWpLoss = isWhiteMove
+                ? (before.wp - after.wp)
+                : (after.wp - before.wp);
             if (rawWpLoss < MIN_WP_LOSS_FOR_PUZZLE) continue;
 
-            // The puzzle starts AFTER the blunder. The solver has to punish it.
-            const puzzleFen = positions[ply + 1];
+            // FEN positions for the filter layer
+            const preBlunderFen = positions[ply];       // position WHERE the blunder happened
+            const puzzleFen = positions[ply + 1];   // position AFTER the blunder (puzzle start)
 
-            // The best punishment comes from the PV calculated at the post-blunder position.
-            const solutionSequence = after.pv
-                ? after.pv.trim().split(' ').slice(0, SOLUTION_DEPTH).filter(Boolean)
-                : (after.bestMove ? [after.bestMove] : []);
+            // ── Delegate all quality decisions to puzzleFilters ───────────────
+            const result = evaluatePuzzleCandidate({
+                beforeEval: before,
+                afterEval: after,
+                isWhiteMove,
+                isEngineBest,
+                wpLoss: rawWpLoss,
+                puzzleFen,
+                preBlunderFen,
+            });
 
-            if (solutionSequence.length === 0) continue;
+            if (!result.accept) {
+                console.log(`[Puzzle] Ply ${ply} rejected — ${result.reason}`);
+                continue;
+            }
 
-            // The solver is the OPPOSITE color of who blundered.
-            // If White just blundered (isWhiteMove=true), it's now Black's turn to punish.
+            // The solver is the side OPPOSITE to who blundered
             const playerColor = isWhiteMove ? 'black' : 'white';
 
-            console.log(`[Puzzle] Found blunder at ply ${ply} | ${isWhiteMove ? 'White' : 'Black'} blundered '${movePlayed}' | Solver: ${playerColor} | Solution: ${solutionSequence.join(' ')}`);
+            console.log(
+                `[Puzzle] ✓ Ply ${ply} | Type: ${result.puzzleType}` +
+                (result.mateIn ? ` (Mate in ${result.mateIn})` : '') +
+                ` | Solver: ${playerColor}` +
+                ` | Solution: ${result.solutionSequence.join(' ')}`
+            );
 
             PuzzleStore.save({
-                fen: puzzleFen,         // Position AFTER the blunder
-                solutionSequence,       // Best response(s) from this position
-                playedMove: movePlayed, // Context: the move that was blundered
+                // Board state
+                fen: puzzleFen,
+                // What the solver must play
+                solutionSequence: result.solutionSequence,
+                // Context: the move that created this puzzle
+                playedMove: movePlayed,
+                // Classification
                 label,
+                puzzleType: result.puzzleType,          // 'missed_mate' | 'tactical_blunder'
+                mateIn: result.mateIn ?? null,
+                // Quantitative metadata
                 wpLoss: parseFloat(rawWpLoss.toFixed(4)),
+                preBlunderWp: parseFloat(before.wp.toFixed(4)),
+                solutionMoveCount: result.solutionSequence.length,
+                // Game context
                 playerColor,
                 gameId,
                 ply,
