@@ -22,6 +22,7 @@ class AnalysisQueue {
     cancel() {
         this.running = false;
         if (this._ac) {
+            console.log('[Engine] Cancelling current analysis');
             this._ac.abort();
             this._ac = null;
         }
@@ -41,6 +42,11 @@ class AnalysisQueue {
         const { onProgress, onResult, onError } = callbacks;
 
         this.cancel();
+        // If the engine was mid-initialization, wait for it to settle before
+        // proceeding. This prevents the new analyzePosition from racing with
+        // a concurrent _spawnAndHandshake that cancel() couldn't interrupt.
+        try { await this._sf._initPromise; } catch { /* ignore — we'll re-init below */ }
+
         this._ac = new AbortController();
         const { signal } = this._ac;
         this.running = true;
@@ -71,7 +77,7 @@ class AnalysisQueue {
             if (!signal.aborted) {
                 const visualScore = ChessMath.cpToVisualScore(result.score, result.mate, isBlackTurn);
                 console.log(`[Live] Position analyzed | Score: ${visualScore}`);
-                
+
                 onResult?.({
                     score: visualScore,
                     mate: result.mate,
@@ -94,9 +100,11 @@ class AnalysisQueue {
         this.cancel();
         if (!history || history.length === 0) return;
 
-        // Ensure a clean slate for game analysis
+        // Ensure a clean slate for game analysis: destroy the old engine and
+        // rebuild the coordinator so it holds a reference to the new instance.
         this._sf.destroy();
-        
+        this._gameCoordinator = new GameAnalysisCoordinator(this._sf);
+
         this._ac = new AbortController();
         const { signal } = this._ac;
         this.running = true;
@@ -106,8 +114,18 @@ class AnalysisQueue {
                 ...callbacks,
                 signal
             });
+            // GameAnalysisCoordinator exits cleanly on abort without throwing,
+            // so we must check the signal here to distinguish cancel from complete.
+            if (signal.aborted) {
+                console.log('[Game] Analysis cancelled — notifying client');
+                callbacks.onCancelled?.();
+            }
         } catch (e) {
             if (e.name !== 'AbortError') callbacks.onError?.(e);
+            else {
+                console.log('[Game] Analysis cancelled (AbortError) — notifying client');
+                callbacks.onCancelled?.();
+            }
         } finally {
             this.running = false;
         }

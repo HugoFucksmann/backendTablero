@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { AnalysisQueue } = require('./analysisQueue');
+const { AnalysisQueue } = require('./Analysisqueue');
 const { PuzzleExtractor } = require('./puzzleExtractor');
 const { PuzzleStore } = require('./puzzleStore');
 const { OpeningBook } = require('./openingBook');
@@ -61,14 +61,20 @@ wss.on('connection', (ws) => {
                         bookPlies: data.bookPlies ? Array.from(data.bookPlies) : []
                     }),
                     onComplete: (acc) => send({ type: 'complete', accuracy: acc }),
+                    onCancelled: () => send({ type: 'cancelled' }),
                     onError: (err) => send({ type: 'error', message: err.message }),
+                }).catch((err) => {
+                    if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
                 });
                 break;
             }
 
             case 'cancel': {
                 queue.cancel();
-                send({ type: 'cancelled' });
+                puzzleExtractor.cancel();
+                // onCancelled callbacks will fire asynchronously from the running tasks.
+                // No need to send 'cancelled' here — the tasks themselves send it once
+                // they confirm the abort, avoiding a double-cancelled race.
                 break;
             }
 
@@ -83,14 +89,18 @@ wss.on('connection', (ws) => {
                 puzzleExtractor.extractFromGames(games, engineConfig, {
                     onGameDone: (data) => send({ type: 'puzzle_game_done', ...data }),
                     onComplete: (data) => send({ type: 'puzzle_extraction_complete', ...data }),
+                    onCancelled: (data) => send({ type: 'extraction_cancelled', ...data }),
                     onError: (err) => send({ type: 'error', message: err.message }),
+                }).catch((err) => {
+                    if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
                 });
                 break;
             }
 
             case 'cancel_extraction': {
                 puzzleExtractor.cancel();
-                send({ type: 'extraction_cancelled' });
+                // extraction_cancelled will be sent via the onCancelled callback once
+                // the running extraction confirms it has stopped cleanly.
                 break;
             }
 

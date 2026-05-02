@@ -92,18 +92,27 @@ function isBalancedPosition(wp, isWhiteMove) {
 }
 
 /**
- * Walks the principal variation from `startFen` and keeps only moves that are
- * captures, give check, or deliver checkmate. Stops at the first "quiet" move
- * (after including it as the final human-facing move in the sequence).
+ * Walks the principal variation from `startFen` and builds the solution sequence.
  *
- * This prevents the solution from trailing off into long positional consolidation
- * that no beginner or intermediate player can follow.
+ * Structure of the variation from the puzzle position (after the blunder):
+ *   move 1 (odd):  best response by the side that didn't blunder  ← the punishing move
+ *   move 2 (even): forced reply by the side that blundered        ← the bad position
+ *   move 3 (odd):  the follow-up that demonstrates why it's lost  ← "the lost move"
+ *
+ * Rules:
+ *  - Always include at least MIN_SEQUENCE_MOVES moves (or until mate/end of PV),
+ *    so the player always sees the full punishing idea, not just the first capture.
+ *  - After MIN_SEQUENCE_MOVES, stop at the first quiet move (non-capture, non-check)
+ *    to avoid trailing off into long positional play the solver can't follow.
+ *  - Always stop at checkmate.
  *
  * @param {string} pvString   Space-separated UCI moves, e.g. "d1h5 e8d8 h5f7"
  * @param {string} startFen   FEN of the position AFTER the blunder (puzzle start).
  * @param {number} [maxMoves]
  * @returns {string[]}        Array of UCI moves forming the forced sequence.
  */
+const MIN_SEQUENCE_MOVES = 3; // must show: punish → defense → consequence
+
 function extractForcedSequence(pvString, startFen, maxMoves = MAX_SEQUENCE_DEPTH) {
     if (!pvString || !startFen) return [];
 
@@ -124,8 +133,11 @@ function extractForcedSequence(pvString, startFen, maxMoves = MAX_SEQUENCE_DEPTH
 
             sequence.push(uciMove);
 
-            if (isMate) break;                      // puzzle ends at checkmate
-            if (!isCapture && !givesCheck) break;   // quiet move — stop here
+            if (isMate) break; // puzzle ends at checkmate regardless of length
+
+            // Only cut on quiet moves once we've shown the minimum required context.
+            // Before MIN_SEQUENCE_MOVES, always continue so the "lost move" is visible.
+            if (sequence.length >= MIN_SEQUENCE_MOVES && !isCapture && !givesCheck) break;
         }
 
         return sequence;
@@ -147,7 +159,7 @@ function extractForcedSequence(pvString, startFen, maxMoves = MAX_SEQUENCE_DEPTH
  *   isEngineBest: boolean,
  *   wpLoss:       number,
  *   puzzleFen:    string,   // FEN AFTER the blunder
- *   preBluderFen: string,   // FEN BEFORE the blunder
+ *   preBlunderFen: string,   // FEN BEFORE the blunder
  * }} ctx
  * @returns {{ accept: boolean, reason?: string, puzzleType?: string,
  *             solutionSequence?: string[], mateIn?: number|null }}
@@ -219,4 +231,5 @@ module.exports = {
     MIN_WP_BALANCED,
     MAX_WP_BALANCED,
     MAX_SEQUENCE_DEPTH,
+    MIN_SEQUENCE_MOVES,
 };

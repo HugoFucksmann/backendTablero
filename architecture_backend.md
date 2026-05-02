@@ -178,14 +178,17 @@ DEAD ──────────► STARTING
 
 ---
 
-## 🛡️ Mutex y Cancelación
+## 🛡️ Mutex y Cancelación Asíncrona
 
-`AnalysisQueue` implementa un **mutex de sesión única**. Llamar a `cancel()` garantiza:
-1. Envía `stop` a Stockfish si está en `SEARCHING`.
-2. Utiliza `AbortController` para interrumpir orquestaciones async en curso.
+`AnalysisQueue` y `PuzzleExtractor` implementan un **mutex de sesión única**. Llamar a `cancel()` garantiza:
+1. Envía `stop` a Stockfish si está en `SEARCHING` de forma síncrona.
+2. Utiliza `AbortController` para interrumpir orquestaciones async en curso (`GameAnalysisCoordinator` o el loop de Puzzles).
 3. El engine queda en `IDLE` listo para el siguiente comando.
 
-`service.js` llama a `queue.cancel()` automáticamente cuando llega un nuevo request o el cliente se desconecta.
+**ACK Asíncrono:**
+El servidor WebSocket (`service.js`) **nunca** envía el mensaje `{"type": "cancelled"}` de forma síncrona dentro del bloque `case 'cancel'`.
+En su lugar, confía en que `signal.aborted` rompa los loops de ejecución activos. Una vez que el loop en curso confirma la interrupción (ej. catch de `AbortError`), lanza los callbacks `onCancelled` o `onExtractionCancelled`, los cuales finalmente emiten el ACK al frontend. 
+Esto evita una condición de carrera ("double-cancelled race") donde el frontend podría asumir erróneamente que una tarea murió antes de que el motor haya liberado sus procesos de red y CPU.
 
 ---
 

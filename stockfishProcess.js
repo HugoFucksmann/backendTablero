@@ -32,6 +32,9 @@ class StockfishProcess {
                 if (merged.hash !== prev.hash) {
                     this._engine.send(`setoption name Hash value ${merged.hash}`);
                 }
+                if (merged.multiPv !== prev.multiPv) {
+                    this._engine.send(`setoption name MultiPV value ${merged.multiPv}`);
+                }
                 this._config = merged;
             }
             return this._initPromise;
@@ -85,6 +88,17 @@ class StockfishProcess {
                 else resolve(result);
             };
 
+            // Register a one-time engine-death handler scoped to this analysis call.
+            // If the engine dies mid-search, we must reject this promise so the caller
+            // doesn't hang forever waiting for a bestmove that will never arrive.
+            const prevOnDied = this._engine.onDied;
+            const restoreOnDied = () => { this._engine.onDied = prevOnDied; };
+            this._engine.onDied = () => {
+                restoreOnDied();
+                this._onEngineDied();
+                settle(new Error('Engine died during analysis'), null);
+            };
+
             const onAbort = () => {
                 if (this._engine.state === EngineState.SEARCHING) {
                     this._engine.state = EngineState.STOPPING;
@@ -99,9 +113,10 @@ class StockfishProcess {
                 if (bm !== null) {
                     this._engine.state = EngineState.IDLE;
                     this._engine.lineHandler = null;
-                    if (this._idleResolve) { 
-                        this._idleResolve(); 
-                        this._idleResolve = null; 
+                    restoreOnDied();
+                    if (this._idleResolve) {
+                        this._idleResolve();
+                        this._idleResolve = null;
                     }
 
                     if (!settled) {
@@ -146,6 +161,7 @@ class StockfishProcess {
                 if (line === 'readyok') {
                     if (signal?.aborted || this._engine.state === EngineState.STOPPING) {
                         this._engine.state = EngineState.IDLE;
+                        restoreOnDied();
                         if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
                         settle(new DOMException('Aborted', 'AbortError'), null);
                         return;

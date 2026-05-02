@@ -48,7 +48,7 @@ class PuzzleExtractor {
      * @param {object} callbacks     onGameDone, onComplete, onError
      */
     async extractFromGames(games, engineConfig = {}, callbacks = {}) {
-        const { onGameDone, onComplete, onError } = callbacks;
+        const { onGameDone, onComplete, onCancelled, onError } = callbacks;
 
         if (this._running) this.cancel();
         this._ac = new AbortController();
@@ -84,6 +84,12 @@ class PuzzleExtractor {
                 }
 
                 const extracted = await this._processGame(processedHistory, gameId, depth, signal);
+
+                // Check abort status immediately after the game finishes — _processGame
+                // may have returned early due to cancellation (extracted=0) but the loop
+                // itself would still fire onGameDone without this guard.
+                if (signal.aborted) break;
+
                 totalExtracted += extracted;
 
                 console.log(`[Puzzle] Game ${i + 1}/${games.length} done | ${extracted} puzzle(s) extracted`);
@@ -93,6 +99,9 @@ class PuzzleExtractor {
             if (!signal.aborted) {
                 console.log(`[Puzzle] Extraction finished | Total puzzles: ${totalExtracted}`);
                 onComplete?.({ totalExtracted });
+            } else {
+                console.log(`[Puzzle] Extraction cancelled | Puzzles extracted before cancel: ${totalExtracted}`);
+                onCancelled?.({ totalExtracted });
             }
 
         } catch (e) {

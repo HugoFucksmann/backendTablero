@@ -53,13 +53,15 @@ class GameAnalysisCoordinator {
                 onOpeningDetected,
             });
 
-            openingPromise.finally(() => {
-                if (signal.aborted) return;
-                openingState.done = true;
-                for (let i = 0; i < totalMoves; i++) {
-                    this._tryClassify(i, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
-                }
-            });
+            openingPromise
+                .catch(() => { /* errors handled below */ })
+                .finally(() => {
+                    if (signal.aborted) return;
+                    openingState.done = true;
+                    for (let i = 0; i < totalMoves; i++) {
+                        this._tryClassify(i, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
+                    }
+                });
 
             const order = buildAnalysisOrder(positions.length, currentIndex);
 
@@ -68,8 +70,7 @@ class GameAnalysisCoordinator {
 
                 const fen = positions[posIdx];
                 const isBlackTurn = fen.includes(' b ');
-                const isHighPri = posIdx === currentIndex || posIdx === currentIndex + 1;
-                const d = isHighPri ? depth : Math.max(10, depth - 3);
+                const d = depth; // User-configured depth is respected for all plies
 
                 try {
                     const raw = await this._engine.analyzePosition(fen, d, signal, null, multiPv);
@@ -110,11 +111,14 @@ class GameAnalysisCoordinator {
                 await openingPromise.catch(() => { });
             }
 
-            if (!signal.aborted) {
+            if (signal.aborted) {
+                const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                console.log(`[Game] Analysis cancelled after ${elapsed}s | id=${gameId}`);
+            } else {
                 const accuracy = EvaluationEngine.calculateAccuracy(finalMoveData);
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                 console.log(`[Game] Analysis completed in ${elapsed}s | Accuracy: W:${accuracy.white}% B:${accuracy.black}%`);
-                
+
                 onComplete?.(accuracy);
                 onProgress?.(100, 'Analysis completed');
             }
@@ -125,16 +129,18 @@ class GameAnalysisCoordinator {
     }
 
     _tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult) {
+        if (completedSet.has(ply)) return;
+
         const result = MoveClassifier.classify({
-            ply, history, positions, evalResults, 
-            bookStatus, openingDone: openingState.done 
+            ply, history, positions, evalResults,
+            bookStatus, openingDone: openingState.done
         });
 
-        if (result && !completedSet.has(ply)) {
-            const { index, label, isBook, wpLoss, isWhiteMove } = result;
-            onMoveResult?.({ index, label, isBook });
-            finalMoveData[index] = { isWhiteMove, wpLoss, isBook };
-            completedSet.add(index);
+        if (result) {
+            const { label, isBook, wpLoss, isWhiteMove } = result;
+            onMoveResult?.({ index: ply, label, isBook });
+            finalMoveData[ply] = { isWhiteMove, wpLoss, isBook };
+            completedSet.add(ply);
         }
     }
 }

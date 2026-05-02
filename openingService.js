@@ -31,8 +31,11 @@ const OpeningService = {
         if (openingCache.has(gameId)) {
             console.log(`[Opening] Using cache for gameId: ${gameId}`);
             const cache = openingCache.get(gameId);
-            for (let i = 0; i < history.length; i++) onPlyResolved(i, cache.bookPlies.has(i));
-            onOpeningDetected?.({ ...cache });
+            const cachedBookPlies = cache.bookPlies instanceof Set
+                ? cache.bookPlies
+                : new Set(cache.bookPlies);
+            for (let i = 0; i < history.length; i++) onPlyResolved(i, cachedBookPlies.has(i));
+            onOpeningDetected?.({ ...cache, bookPlies: cachedBookPlies });
             return;
         }
 
