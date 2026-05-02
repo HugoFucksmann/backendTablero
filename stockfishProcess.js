@@ -20,7 +20,7 @@ class StockfishProcess {
         this._engine.onDied = () => this._onEngineDied();
     }
 
-    init(config = {}) {
+    async init(config = {}) {
         const merged = { ...this._config, ...config };
 
         if (this._engine.state === EngineState.IDLE) {
@@ -60,9 +60,7 @@ class StockfishProcess {
             await this._initPromise;
         }
 
-        const t0 = performance.now();
         await this._idlePromise;
-        const tWait = Math.round(performance.now() - t0);
 
         if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
         if (this._engine.state !== EngineState.IDLE) {
@@ -76,14 +74,12 @@ class StockfishProcess {
             this._engine.state = EngineState.SEARCHING;
 
             const lines = {};
-            let lastBestMove = '';
             let settled = false;
 
             const settle = (err, result) => {
                 if (settled) return;
                 settled = true;
                 signal?.removeEventListener('abort', onAbort);
-                const elapsed = Math.round(performance.now() - t0);
 
                 if (err) reject(err);
                 else resolve(result);
@@ -101,20 +97,20 @@ class StockfishProcess {
             const searchHandler = (line) => {
                 const bm = parseBestmoveLine(line);
                 if (bm !== null) {
-                    lastBestMove = bm.bestMove || lastBestMove;
                     this._engine.state = EngineState.IDLE;
                     this._engine.lineHandler = null;
-                    if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
+                    if (this._idleResolve) { 
+                        this._idleResolve(); 
+                        this._idleResolve = null; 
+                    }
 
                     if (!settled) {
-                        if (!lines[1]) {
-                            lines[1] = { multipv: 1, score: 0, mate: null, pv: '', move: lastBestMove };
-                        }
+                        const bestLine = lines[1] || { score: 0, mate: null, pv: '', move: bm.bestMove };
                         settle(null, {
-                            score: lines[1].score,
-                            mate: lines[1].mate ?? null,
-                            bestMove: lastBestMove || lines[1].move,
-                            pv: lines[1].pv,
+                            score: bestLine.score,
+                            mate: bestLine.mate ?? null,
+                            bestMove: bm.bestMove || bestLine.move,
+                            pv: bestLine.pv,
                             lines: Object.values(lines).sort((a, b) => a.multipv - b.multipv),
                         });
                     }

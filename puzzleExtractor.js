@@ -3,9 +3,9 @@
 const { Chess } = require('chess.js');
 const { StockfishProcess } = require('./stockfishProcess');
 const { ChessMath } = require('./chessMath');
-const { EvaluationEngine } = require('./Evaluationrules');
+const { EvaluationEngine } = require('./evaluationRules');
 const { buildPositions } = require('./analysisUtils');
-const { PuzzleStore } = require('./PuzzleStore');
+const { PuzzleStore } = require('./puzzleStore');
 
 // Only moves with >= this wpLoss become puzzles
 const MIN_WP_LOSS_FOR_PUZZLE = 0.15;
@@ -56,7 +56,7 @@ class PuzzleExtractor {
         const depth = engineConfig.depth ?? 20;
         let totalExtracted = 0;
 
-        console.log(`[Puzzle] 🔍 Iniciando extracción: ${games.length} partida(s) | Depth: ${depth}`);
+        console.log(`[Puzzle] Starting extraction: ${games.length} game(s) | Depth: ${depth}`);
 
         try {
             this._sf.destroy();
@@ -82,18 +82,18 @@ class PuzzleExtractor {
                 const extracted = await this._processGame(processedHistory, gameId, depth, signal);
                 totalExtracted += extracted;
 
-                console.log(`[Puzzle] ✅ Partida ${i + 1}/${games.length} completada | ${extracted} puzzle(s) extraído(s)`);
+                console.log(`[Puzzle] Game ${i + 1}/${games.length} completed | ${extracted} puzzle(s) extracted`);
                 onGameDone?.({ gameIndex: i, total: games.length, extractedCount: extracted, totalExtracted });
             }
 
             if (!signal.aborted) {
-                console.log(`[Puzzle] 🏁 Extracción finalizada | Total puzzles: ${totalExtracted}`);
+                console.log(`[Puzzle] Extraction finished | Total puzzles: ${totalExtracted}`);
                 onComplete?.({ totalExtracted });
             }
 
         } catch (e) {
             if (e.name !== 'AbortError') {
-                console.error('[Puzzle] Error durante extracción:', e.message);
+                console.error('[Puzzle] Error during extraction:', e.message);
                 onError?.(e);
             }
         } finally {

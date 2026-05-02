@@ -1,7 +1,7 @@
 'use strict';
 
-const { EvaluationEngine } = require('./Evaluationrules');
-const { MAX_BOOK_PLY } = require('./Openingservice');
+const { EvaluationEngine } = require('./evaluationRules');
+const { MAX_BOOK_PLY } = require('./openingService');
 
 class MoveClassifier {
     static classify({ ply, history, positions, evalResults, bookStatus, openingDone }) {

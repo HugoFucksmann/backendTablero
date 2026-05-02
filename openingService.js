@@ -1,5 +1,7 @@
 'use strict';
 
+const { OpeningBook } = require('./openingBook');
+
 const MAX_BOOK_PLY = 30;
 const MIN_THEORY_GAMES = 230_000;
 const MAX_MOVE_RANK = 6;
@@ -27,14 +29,14 @@ async function fetchWithTimeout(url, options, timeoutMs) {
 const OpeningService = {
     async detectOpenings({ positions, history, gameId, token, signal, onPlyResolved, onOpeningDetected }) {
         if (openingCache.has(gameId)) {
-            console.log(`[Opening] 📦 Usando caché para gameId: ${gameId}`);
+            console.log(`[Opening] Using cache for gameId: ${gameId}`);
             const cache = openingCache.get(gameId);
             for (let i = 0; i < history.length; i++) onPlyResolved(i, cache.bookPlies.has(i));
             onOpeningDetected?.({ ...cache });
             return;
         }
 
-        console.log(`[Opening] 🌐 Consultando Lichess para gameId: ${gameId}`);
+        console.log(`[Opening] Fetching from Lichess for gameId: ${gameId}`);
 
         const maxPly = Math.min(history.length, MAX_BOOK_PLY);
         const bookPlies = new Set();
@@ -51,6 +53,20 @@ const OpeningService = {
                 break;
             }
 
+            const fenAfter = positions[ply + 1];
+            const localEntry = OpeningBook.lookup(fenAfter);
+
+            if (localEntry) {
+                finalOpeningName = localEntry.name;
+                finalEcoCode = localEntry.eco;
+                bookPlies.add(ply);
+                lastTheoryPly = ply;
+                consecutiveNonBook = 0;
+                onPlyResolved(ply, true);
+                continue; // Found locally, skip Lichess for this ply
+            }
+
+            // Fallback to Lichess only if not in local book
             const fenBeforeMove = positions[ply].split(' ').slice(0, 4).join(' ');
             const url = `https://explorer.lichess.ovh/lichess?fen=${encodeURIComponent(fenBeforeMove)}&ratings=${RATINGS_PARAM}`;
             const headers = { 'User-Agent': 'ChessAnalysisLocalApp/1.0', 'Accept': 'application/json' };
@@ -75,7 +91,15 @@ const OpeningService = {
                         finalEcoCode = data.opening.eco ?? finalEcoCode;
                     }
 
-                    const playedUci = history[ply].lan;
+                    const moveObj = history[ply];
+                    const playedUci = typeof moveObj === 'string' ? moveObj : moveObj.lan;
+                    if (!playedUci) {
+                        // If we don't have UCI, we can't accurately check Lichess explorer by move
+                        consecutiveNonBook++;
+                        onPlyResolved(ply, false);
+                        success = true;
+                        continue;
+                    }
                     const explorerIdx = data.moves?.findIndex(m => m.uci === playedUci) ?? -1;
 
                     if (explorerIdx > -1 && explorerIdx < MAX_MOVE_RANK) {

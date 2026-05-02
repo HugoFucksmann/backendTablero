@@ -5,10 +5,11 @@ Este es el motor de análisis nativo para el **Tablero de Ajedrez Pro**. Al ejec
 ## 🚀 Características Principales
 
 - **⚡ Rendimiento Nativo**: Utiliza Stockfish compilado para tu sistema operativo, permitiendo análisis más profundos en menos tiempo.
-- **💾 Caché Persistente**: Guarda los análisis realizados en disco (`cache.json`). Si vuelves a una posición ya analizada, el resultado es instantáneo.
-- **🌍 Detección de Aperturas**: Integración con la API de Lichess Cloud para identificar teoría y nombres de aperturas sin latencia en el frontend.
-- **📊 Clasificación Avanzada**: Implementa lógica de clasificación de jugadas al estilo Chess.com (*Brillante*, *Gran Jugada*, *Mejor*, *Excelente*, *Bueno*, *Imprecisión*, *Error*, *Error Grave* y *Omisión*).
-- **🔄 Multi-Cliente**: Soporta múltiples conexiones simultáneas, ideal si tienes varias pestañas del tablero abiertas.
+- **⚡ Rendimiento Nativo**: Utiliza Stockfish compilado para tu sistema operativo, permitiendo análisis más profundos en menos tiempo.
+- **🧩 Extractor de Puzzles**: Genera automáticamente tácticas de entrenamiento a partir de tus partidas basándose en errores graves detectados por el motor.
+- **🌍 Detección de Aperturas Híbrida**: Combina un libro local ultra-rápido (TSV) con la API de Lichess para una identificación instantánea de teoría.
+- **📊 Clasificación Avanzada**: Lógica de clasificación de jugadas al estilo Chess.com (*Brillante*, *Mejor*, *Excelente*, *Bueno*, *Imprecisión*, *Error*, *Error Grave*).
+- **🔄 Multi-Cliente**: Soporta múltiples conexiones simultáneas vía WebSockets.
 
 ## 🛠️ Instalación y Uso
 

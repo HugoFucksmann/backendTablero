@@ -13,56 +13,58 @@ const EngineState = Object.freeze({
 
 class EngineProcess {
     constructor() {
-        this.state         = EngineState.DEAD;
-        this._proc         = null;
-        this._sessionId    = 0;
-        this._lineBuf      = '';
-        this.lineHandler   = null;
-        this.onDied        = null;
+        this.state = EngineState.DEAD;
+        this._proc = null;
+        this._sessionId = 0;
+        this._lineBuf = '';
+        this.lineHandler = null;
+        this.onDied = null;
     }
 
     spawn() {
-        if (this._proc) throw new Error('Already alive');
+        if (this._proc) throw new Error('Engine already running');
 
         this._sessionId += 1;
-        const session = this._sessionId;
+        const currentSession = this._sessionId;
 
-        this.state   = EngineState.STARTING;
+        this.state = EngineState.STARTING;
         this._lineBuf = '';
 
         return new Promise((resolve, reject) => {
-            let proc;
             try {
-                console.log(`[Engine] Spawning at: ${STOCKFISH_PATH}`);
-                proc = spawn(STOCKFISH_PATH, [], { stdio: ['pipe', 'pipe', 'pipe'] });
-            } catch (e) {
+                console.log(`[Engine] Spawning: ${STOCKFISH_PATH}`);
+                this._proc = spawn(STOCKFISH_PATH, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+            } catch (err) {
                 this.state = EngineState.DEAD;
-                return reject(e);
+                return reject(err);
             }
 
-            this._proc = proc;
+            this._proc.stderr.on('data', (data) => {
+                console.error('[Engine STDERR]', data.toString().trim());
+            });
 
-            proc.stderr.on('data', (d) => console.error('[Engine STDERR]', d.toString().trim()));
-
-            proc.on('error', (err) => {
-                if (this._sessionId !== session) return;
-                this._handleDeath(session);
+            this._proc.on('error', (err) => {
+                if (this._sessionId !== currentSession) return;
+                this._handleDeath(currentSession);
                 reject(err);
             });
 
-            proc.on('exit', (code, sig) => {
-                if (this._sessionId !== session) return;
-                this._handleDeath(session);
+            this._proc.on('exit', () => {
+                if (this._sessionId !== currentSession) return;
+                this._handleDeath(currentSession);
             });
 
-            proc.stdout.on('data', (chunk) => {
-                if (this._sessionId !== session) return;
+            this._proc.stdout.on('data', (chunk) => {
+                if (this._sessionId !== currentSession) return;
+                
                 this._lineBuf += chunk.toString();
-                let nl;
-                while ((nl = this._lineBuf.indexOf('\n')) !== -1) {
-                    const line = this._lineBuf.slice(0, nl).trim();
-                    this._lineBuf = this._lineBuf.slice(nl + 1);
-                    if (line && this.lineHandler) this.lineHandler(line);
+                let newLineIdx;
+                while ((newLineIdx = this._lineBuf.indexOf('\n')) !== -1) {
+                    const line = this._lineBuf.slice(0, newLineIdx).trim();
+                    this._lineBuf = this._lineBuf.slice(newLineIdx + 1);
+                    if (line && this.lineHandler) {
+                        this.lineHandler(line);
+                    }
                 }
             });
 
@@ -70,16 +72,16 @@ class EngineProcess {
         });
     }
 
-    send(cmd) {
+    send(command) {
         if (this._proc?.stdin?.writable) {
-            this._proc.stdin.write(cmd + '\n');
+            this._proc.stdin.write(command + '\n');
         }
     }
 
     kill() {
         const proc = this._proc;
-        this._proc  = null;
-        this.state  = EngineState.DEAD;
+        this._proc = null;
+        this.state = EngineState.DEAD;
         this.lineHandler = null;
         this._sessionId += 1;
 
@@ -96,8 +98,8 @@ class EngineProcess {
 
     _handleDeath(session) {
         if (this._sessionId !== session) return;
-        this._proc    = null;
-        this.state    = EngineState.DEAD;
+        this._proc = null;
+        this.state = EngineState.DEAD;
         this.lineHandler = null;
         this._sessionId += 1;
         this.onDied?.(session);

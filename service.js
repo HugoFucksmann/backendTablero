@@ -3,9 +3,13 @@ require('dotenv').config();
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { AnalysisQueue } = require('./Analysisqueue.js');
-const { PuzzleExtractor } = require('./PuzzleExtractor.js');
-const { PuzzleStore } = require('./PuzzleStore.js');
+const { AnalysisQueue } = require('./analysisQueue');
+const { PuzzleExtractor } = require('./puzzleExtractor');
+const { PuzzleStore } = require('./puzzleStore');
+const { OpeningBook } = require('./openingBook');
+
+// Load opening book once at startup
+OpeningBook.load();
 
 const PORT = parseInt(process.env.PORT || '9001', 10);
 

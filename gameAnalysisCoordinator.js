@@ -1,111 +1,35 @@
 'use strict';
 
-const { StockfishProcess } = require('./stockfishProcess');
 const { ChessMath } = require('./chessMath');
-const { EvaluationEngine } = require('./Evaluationrules');
-const { OpeningService } = require('./Openingservice');
+const { EvaluationEngine } = require('./evaluationRules');
+const { OpeningService } = require('./openingService');
 const { buildPositions, buildAnalysisOrder, mapLines } = require('./analysisUtils');
-const { MoveClassifier } = require('./MoveClassifier');
+const { MoveClassifier } = require('./moveClassifier');
 
-class AnalysisQueue {
-    constructor() {
-        this._sf = new StockfishProcess();
-        this._ac = null;
-        this.running = false;
+class GameAnalysisCoordinator {
+    constructor(engine) {
+        this._engine = engine;
     }
 
-    cancel() {
-        this.running = false;
-        if (this._ac) {
-            this._ac.abort();
-            this._ac = null;
-        }
-        this._sf.stop();
-    }
-
-    destroy() {
-        console.log('[Engine] 🗑️ Destruyendo instancia de Stockfish');
-        this.cancel();
-        this._sf.destroy();
-    }
-
-    async analyzePosition(fen, moveIndex, config = {}, callbacks = {}) {
-        const { onProgress, onResult, onError } = callbacks;
-
-        this.cancel();
-        this._ac = new AbortController();
-        const { signal } = this._ac;
-        this.running = true;
-
-        const depth = config.depth ?? 18;
-        const multiPv = config.multiPv ?? 3;
-
-        try {
-            await this._sf.init(config);
-            if (signal.aborted) return;
-
-            const isBlackTurn = fen.includes(' b ');
-
-            const result = await this._sf.analyzePosition(
-                fen, depth, signal,
-                ({ score, mate, bestMove, lines }) => {
-                    onProgress?.({
-                        score: ChessMath.cpToVisualScore(score, mate, isBlackTurn),
-                        mate,
-                        bestMove,
-                        moveIndex,
-                        lines: mapLines(lines, isBlackTurn),
-                    });
-                },
-                multiPv,
-            );
-
-            if (!signal.aborted) {
-                const visualScore = ChessMath.cpToVisualScore(result.score, result.mate, isBlackTurn);
-                console.log(`[Live] 🎯 Posición: ${fen.split(' ')[0].slice(0, 20)}... | Depth: ${depth} | Score: ${visualScore}`);
-                
-                onResult?.({
-                    score: visualScore,
-                    mate: result.mate,
-                    bestMove: result.bestMove,
-                    moveIndex,
-                    lines: mapLines(result.lines, isBlackTurn),
-                });
-            }
-        } catch (e) {
-            if (e.name !== 'AbortError') onError?.(e);
-        } finally {
-            this.running = false;
-        }
-    }
-
-    async analyzeGame(history, currentIndex, gameId, engineConfig = {}, callbacks = {}) {
+    async run(history, currentIndex, gameId, engineConfig = {}, callbacks = {}) {
         const {
-            onStatus, onProgress, onMoveResult, onOpeningDetected, onComplete, onError,
+            onStatus, onProgress, onMoveResult, onOpeningDetected, onComplete, onError, signal
         } = callbacks;
-
-        this.cancel();
-        if (!history || history.length === 0) return;
-
-        this._sf.destroy();
-        this._ac = new AbortController();
-        const { signal } = this._ac;
-        this.running = true;
 
         const depth = engineConfig.depth ?? 18;
         const multiPv = engineConfig.multiPv ?? 1;
         const t0 = Date.now();
 
-        console.log(`[Game] 🚀 Iniciando análisis: id=${gameId} | ${history.length} jugadas | Depth: ${depth} | MultiPV: ${multiPv}`);
+        console.log(`[Game] Starting analysis: id=${gameId} | ${history.length} moves | Depth: ${depth} | MultiPV: ${multiPv}`);
 
         onStatus?.(true);
-        onProgress?.(0, 'Iniciando motores…');
+        onProgress?.(0, 'Starting engines…');
 
         try {
-            await this._sf.init(engineConfig);
+            await this._engine.init(engineConfig);
             if (signal.aborted) return;
 
-            this._sf.newGame();
+            this._engine.newGame();
 
             const positions = buildPositions(history);
             const totalMoves = history.length;
@@ -148,7 +72,7 @@ class AnalysisQueue {
                 const d = isHighPri ? depth : Math.max(10, depth - 3);
 
                 try {
-                    const raw = await this._sf.analyzePosition(fen, d, signal, null, multiPv);
+                    const raw = await this._engine.analyzePosition(fen, d, signal, null, multiPv);
                     if (signal.aborted) break;
 
                     const evalResult = {
@@ -174,11 +98,11 @@ class AnalysisQueue {
                     this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
 
                     const pct = Math.round((evaluatedCount / totalMoves) * 100);
-                    onProgress?.(Math.min(99, pct), `Analizando (${pct}%)`);
+                    onProgress?.(Math.min(99, pct), `Analyzing (${pct}%)`);
 
                 } catch (e) {
                     if (e.name === 'AbortError') break;
-                    console.error(`[AnalysisQueue] Engine error at ply ${posIdx}:`, e.message);
+                    console.error(`[Game] Engine error at ply ${posIdx}:`, e.message);
                 }
             }
 
@@ -189,17 +113,14 @@ class AnalysisQueue {
             if (!signal.aborted) {
                 const accuracy = EvaluationEngine.calculateAccuracy(finalMoveData);
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                console.log(`[Game] ✅ Análisis completado en ${elapsed}s | Precisión: W:${accuracy.white}% B:${accuracy.black}%`);
+                console.log(`[Game] Analysis completed in ${elapsed}s | Accuracy: W:${accuracy.white}% B:${accuracy.black}%`);
                 
                 onComplete?.(accuracy);
-                onProgress?.(100, 'Análisis completado');
+                onProgress?.(100, 'Analysis completed');
             }
 
-        } catch (e) {
-            if (e.name !== 'AbortError') onError?.(e);
         } finally {
             onStatus?.(false);
-            this.running = false;
         }
     }
 
@@ -218,4 +139,4 @@ class AnalysisQueue {
     }
 }
 
-module.exports = { AnalysisQueue };
+module.exports = { GameAnalysisCoordinator };
