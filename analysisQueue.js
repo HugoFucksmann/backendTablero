@@ -15,8 +15,7 @@ class AnalysisQueue {
     constructor() {
         this._sf = new StockfishProcess();
         this._ac = null;
-        this.running = false;
-        this._gameCoordinator = new GameAnalysisCoordinator(this._sf);
+        this._gameCoordinator = new GameAnalysisCoordinator();
     }
 
     cancel() {
@@ -100,10 +99,9 @@ class AnalysisQueue {
         this.cancel();
         if (!history || history.length === 0) return;
 
-        // Ensure a clean slate for game analysis: destroy the old engine and
-        // rebuild the coordinator so it holds a reference to the new instance.
-        this._sf.destroy();
-        this._gameCoordinator = new GameAnalysisCoordinator(this._sf);
+        // Rebuild the coordinator to ensure a clean slate.
+        // We do not destroy the live engine (this._sf) to maintain independence.
+        this._gameCoordinator = new GameAnalysisCoordinator();
 
         this._ac = new AbortController();
         const { signal } = this._ac;

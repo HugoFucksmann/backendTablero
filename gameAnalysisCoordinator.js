@@ -5,10 +5,10 @@ const { EvaluationEngine } = require('./evaluationRules');
 const { OpeningService } = require('./openingService');
 const { buildPositions, buildAnalysisOrder, mapLines } = require('./analysisUtils');
 const { MoveClassifier } = require('./moveClassifier');
+const { StockfishProcess } = require('./stockfishProcess');
 
 class GameAnalysisCoordinator {
-    constructor(engine) {
-        this._engine = engine;
+    constructor() {
     }
 
     async run(history, currentIndex, gameId, engineConfig = {}, callbacks = {}) {
@@ -20,16 +20,40 @@ class GameAnalysisCoordinator {
         const multiPv = engineConfig.multiPv ?? 1;
         const t0 = Date.now();
 
-        console.log(`[Game] Starting analysis: id=${gameId} | ${history.length} moves | Depth: ${depth} | MultiPV: ${multiPv}`);
+        const hash = engineConfig.hash ?? 128;
+        const threads = engineConfig.threads ?? 1;
+
+        // Instead of feeding all threads to a single engine (which is slow at shallow depths
+        // due to Lazy SMP overhead), we spawn an independent engine per thread to process
+        // multiple positions in parallel.
+        const numEngines = Math.max(1, threads);
+        const hashPerEngine = Math.max(16, Math.floor(hash / numEngines));
+
+        console.log(`[Game] Starting analysis: id=${gameId} | ${history.length} moves | Depth: ${depth} | MultiPV: ${multiPv} | Parallel Engines: ${numEngines} (1 thread each) | Hash/Engine: ${hashPerEngine}MB`);
 
         onStatus?.(true);
         onProgress?.(0, 'Starting engines…');
 
-        try {
-            await this._engine.init(engineConfig);
-            if (signal.aborted) return;
+        const engines = Array.from({ length: numEngines }, () => new StockfishProcess());
+        
+        const cleanupEngines = () => {
+            engines.forEach(e => e.destroy());
+        };
 
-            this._engine.newGame();
+        try {
+            await Promise.all(engines.map(e => e.init({
+                ...engineConfig,
+                threads: 1,
+                hash: hashPerEngine,
+                multiPv
+            })));
+            
+            if (signal.aborted) {
+                cleanupEngines();
+                return;
+            }
+
+            engines.forEach(e => e.newGame());
 
             const positions = buildPositions(history);
             const totalMoves = history.length;
@@ -64,48 +88,53 @@ class GameAnalysisCoordinator {
                 });
 
             const order = buildAnalysisOrder(positions.length, currentIndex);
+            let nextOrderIdx = 0;
 
-            for (const posIdx of order) {
-                if (signal.aborted) break;
-
-                const fen = positions[posIdx];
-                const isBlackTurn = fen.includes(' b ');
-                const d = depth; // User-configured depth is respected for all plies
-
-                try {
-                    const raw = await this._engine.analyzePosition(fen, d, signal, null, multiPv);
+            const workers = engines.map(async (engine) => {
+                while (nextOrderIdx < order.length) {
                     if (signal.aborted) break;
 
-                    const evalResult = {
-                        wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurn),
-                        score: ChessMath.cpToVisualScore(raw.score, raw.mate, isBlackTurn),
-                        mate: raw.mate,
-                        bestMove: raw.bestMove,
-                        lines: mapLines(raw.lines, isBlackTurn),
-                    };
+                    const posIdx = order[nextOrderIdx++];
+                    const fen = positions[posIdx];
+                    const isBlackTurn = fen.includes(' b ');
 
-                    evalResults[posIdx] = evalResult;
-                    evaluatedCount++;
+                    try {
+                        const raw = await engine.analyzePosition(fen, depth, signal, null, multiPv);
+                        if (signal.aborted) break;
 
-                    onMoveResult?.({
-                        index: posIdx === 0 ? -1 : posIdx - 1,
-                        score: evalResult.score,
-                        mate: evalResult.mate,
-                        bestMove: evalResult.bestMove,
-                        lines: evalResult.lines,
-                    });
+                        const evalResult = {
+                            wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurn),
+                            score: ChessMath.cpToVisualScore(raw.score, raw.mate, isBlackTurn),
+                            mate: raw.mate,
+                            bestMove: raw.bestMove,
+                            lines: mapLines(raw.lines, isBlackTurn),
+                        };
 
-                    this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
-                    this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
+                        evalResults[posIdx] = evalResult;
+                        evaluatedCount++;
 
-                    const pct = Math.round((evaluatedCount / totalMoves) * 100);
-                    onProgress?.(Math.min(99, pct), `Analyzing (${pct}%)`);
+                        onMoveResult?.({
+                            index: posIdx === 0 ? -1 : posIdx - 1,
+                            score: evalResult.score,
+                            mate: evalResult.mate,
+                            bestMove: evalResult.bestMove,
+                            lines: evalResult.lines,
+                        });
 
-                } catch (e) {
-                    if (e.name === 'AbortError') break;
-                    console.error(`[Game] Engine error at ply ${posIdx}:`, e.message);
+                        this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
+                        this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
+
+                        const pct = Math.round((evaluatedCount / totalMoves) * 100);
+                        onProgress?.(Math.min(99, pct), `Analyzing (${pct}%)`);
+
+                    } catch (e) {
+                        if (e.name === 'AbortError') break;
+                        console.error(`[Game] Engine error at ply ${posIdx}:`, e.message);
+                    }
                 }
-            }
+            });
+
+            await Promise.all(workers);
 
             if (!signal.aborted) {
                 await openingPromise.catch(() => { });
@@ -124,6 +153,7 @@ class GameAnalysisCoordinator {
             }
 
         } finally {
+            cleanupEngines();
             onStatus?.(false);
         }
     }

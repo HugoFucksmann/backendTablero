@@ -6,7 +6,7 @@ const { ChessMath } = require('./chessMath');
 const { EvaluationEngine } = require('./evaluationRules');
 const { buildPositions } = require('./analysisUtils');
 const { PuzzleStore } = require('./puzzleStore');
-const { evaluatePuzzleCandidate } = require('./puzzleFilters');
+const { evaluatePuzzleCandidate, isTacticalMove, isMissedMate } = require('./puzzleFilters');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -20,7 +20,6 @@ const PUZZLE_LABELS = new Set(['Error', 'Error grave']);
 
 class PuzzleExtractor {
     constructor() {
-        this._sf = new StockfishProcess();
         this._running = false;
         this._ac = null;
     }
@@ -31,12 +30,10 @@ class PuzzleExtractor {
             this._ac.abort();
             this._ac = null;
         }
-        this._sf.stop();
     }
 
     destroy() {
         this.cancel();
-        this._sf.destroy();
     }
 
     /**
@@ -58,13 +55,25 @@ class PuzzleExtractor {
         const depth = engineConfig.depth ?? 20;
         let totalExtracted = 0;
 
-        console.log(`[Puzzle] Starting extraction: ${games.length} game(s) | Depth: ${depth}`);
+        const threads = engineConfig.threads ?? 1;
+        const hash = engineConfig.hash ?? 128;
+
+        const numEngines = Math.max(1, threads);
+        const hashPerEngine = Math.max(16, Math.floor(hash / numEngines));
+
+        console.log(`[Puzzle] Starting extraction: ${games.length} game(s) | Depth: ${depth} | Parallel Engines: ${numEngines} (1 thread each) | Hash/Engine: ${hashPerEngine}MB`);
+        console.log(`[Puzzle] Strategy: Two-phase | Phase 1: Light D16/MP1 scan | Phase 2: Surgical Heavy D20+/MP2 validation`);
+
+        const engines = Array.from({ length: numEngines }, () => new StockfishProcess());
+        const cleanupEngines = () => engines.forEach(e => e.destroy());
 
         try {
-            this._sf.destroy();
-            // multiPv=2 is mandatory — the gap between lines 1 and 2 is how we
-            // detect whether a puzzle has a clear, unambiguous solution.
-            await this._sf.init({ ...engineConfig, depth, multiPv: 2 });
+            await Promise.all(engines.map(e => e.init({
+                ...engineConfig,
+                threads: 1,
+                hash: hashPerEngine,
+                multiPv: 1
+            })));
 
             for (let i = 0; i < games.length; i++) {
                 if (signal.aborted) break;
@@ -83,7 +92,7 @@ class PuzzleExtractor {
                     }
                 }
 
-                const extracted = await this._processGame(processedHistory, gameId, depth, signal);
+                const extracted = await this._processGame(processedHistory, gameId, depth, engines, signal);
 
                 // Check abort status immediately after the game finishes — _processGame
                 // may have returned early due to cancellation (extracted=0) but the loop
@@ -110,128 +119,161 @@ class PuzzleExtractor {
                 onError?.(e);
             }
         } finally {
+            cleanupEngines();
             this._running = false;
         }
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
 
-    async _processGame(history, gameId, depth, signal) {
+    async _processGame(history, gameId, depth, engines, signal) {
         if (!history || history.length === 0) return 0;
 
         const positions = buildPositions(history);
-        const evalResults = new Array(positions.length).fill(null);
+        const lightEvalResults = new Array(positions.length).fill(null);
         let extracted = 0;
 
-        this._sf.newGame();
+        engines.forEach(e => e.newGame());
 
-        // ── Phase 1: analyze every position ──────────────────────────────────
-        for (let i = 0; i < positions.length; i++) {
-            if (signal.aborted) break;
+        // ── Phase 1: Light analysis (MultiPV 1, lower depth) ───────────────
+        const lightDepth = Math.min(depth, 16); 
+        let nextLightIdx = 0;
 
-            const fen = positions[i];
-            const isBlackTurn = fen.includes(' b ');
-
-            try {
-                const raw = await this._sf.analyzePosition(fen, depth, signal, null, 2);
+        const lightWorkers = engines.map(async (engine) => {
+            while (nextLightIdx < positions.length) {
                 if (signal.aborted) break;
+                const posIdx = nextLightIdx++;
+                const fen = positions[posIdx];
+                const isBlackTurn = fen.includes(' b ');
 
-                // Store everything the filter layer will need.
-                evalResults[i] = {
-                    // Win probability (White perspective, 0..1)
-                    wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurn),
-                    // Engine's best move and full PV from this position
-                    bestMove: raw.bestMove,
-                    pv: raw.lines?.[0]?.pv ?? '',
-                    // Raw mate value: positive = side-to-move has forced mate
-                    mate: raw.mate ?? null,
-                    // Raw centipawn scores for both lines (needed for gap / ambiguity check)
-                    line1Score: raw.lines?.[0]?.score ?? raw.score ?? 0,
-                    line2Score: raw.lines?.[1]?.score ?? null,
-                };
-            } catch (e) {
-                if (e.name === 'AbortError') break;
-                // Neutral fallback so we don't crash the whole game
-                evalResults[i] = { wp: 0.5, bestMove: null, pv: '', mate: null, line1Score: 0, line2Score: null };
+                try {
+                    const raw = await engine.analyzePosition(fen, lightDepth, signal, null, 1);
+                    if (signal.aborted) break;
+
+                    lightEvalResults[posIdx] = {
+                        wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurn),
+                        bestMove: raw.bestMove,
+                        mate: raw.mate ?? null,
+                    };
+                } catch (e) {
+                    if (e.name === 'AbortError') break;
+                    lightEvalResults[posIdx] = { wp: 0.5, bestMove: null, mate: null };
+                }
             }
-        }
+        });
 
-        // ── Phase 2: scan for tactical mistakes ───────────────────────────────
+        await Promise.all(lightWorkers);
+
+        if (signal.aborted) return extracted;
+
+        // ── Phase 2: Surgical heavy analysis on candidates ───────────────────
+        const candidates = [];
         for (let ply = 0; ply < history.length; ply++) {
-            if (signal.aborted) break;
-
-            const before = evalResults[ply];
-            const after = evalResults[ply + 1];
-            if (!before || !after) continue;
+            const beforeLight = lightEvalResults[ply];
+            const afterLight = lightEvalResults[ply + 1];
+            if (!beforeLight || !afterLight) continue;
 
             const isWhiteMove = !positions[ply].includes(' b ');
             const movePlayed = typeof history[ply] === 'string'
                 ? history[ply]
                 : (history[ply].lan ?? history[ply].san);
-            const isEngineBest = before.bestMove === movePlayed;
+            const isEngineBest = beforeLight.bestMove === movePlayed;
 
-            // Fast pre-filter: only process moves the engine flagged as mistakes
-            const label = EvaluationEngine.classifyMove(before.wp, after.wp, isWhiteMove, isEngineBest);
+            const label = EvaluationEngine.classifyMove(beforeLight.wp, afterLight.wp, isWhiteMove, isEngineBest);
             if (!PUZZLE_LABELS.has(label)) continue;
 
             const rawWpLoss = isWhiteMove
-                ? (before.wp - after.wp)
-                : (after.wp - before.wp);
+                ? (beforeLight.wp - afterLight.wp)
+                : (afterLight.wp - beforeLight.wp);
             if (rawWpLoss < MIN_WP_LOSS_FOR_PUZZLE) continue;
 
-            // FEN positions for the filter layer
-            const preBlunderFen = positions[ply];       // position WHERE the blunder happened
-            const puzzleFen = positions[ply + 1];   // position AFTER the blunder (puzzle start)
+            const preBlunderFen = positions[ply];
+            const puzzleFen = positions[ply + 1];
 
-            // ── Delegate all quality decisions to puzzleFilters ───────────────
-            const result = evaluatePuzzleCandidate({
-                beforeEval: before,
-                afterEval: after,
-                isWhiteMove,
-                isEngineBest,
-                wpLoss: rawWpLoss,
-                puzzleFen,
-                preBlunderFen,
-            });
-
-            if (!result.accept) {
-                console.log(`[Puzzle] Ply ${ply} rejected — ${result.reason}`);
+            if (!isMissedMate(beforeLight.mate, isEngineBest) && !isTacticalMove(preBlunderFen, beforeLight.bestMove)) {
+                console.log(`[Puzzle] Ply ${ply} rejected — best move not tactical (positional error)`);
                 continue;
             }
 
-            // The solver is the side OPPOSITE to who blundered
-            const playerColor = isWhiteMove ? 'black' : 'white';
-
-            console.log(
-                `[Puzzle] ✓ Ply ${ply} | Type: ${result.puzzleType}` +
-                (result.mateIn ? ` (Mate in ${result.mateIn})` : '') +
-                ` | Solver: ${playerColor}` +
-                ` | Solution: ${result.solutionSequence.join(' ')}`
-            );
-
-            PuzzleStore.save({
-                // Board state
-                fen: puzzleFen,
-                // What the solver must play
-                solutionSequence: result.solutionSequence,
-                // Context: the move that created this puzzle
-                playedMove: movePlayed,
-                // Classification
-                label,
-                puzzleType: result.puzzleType,          // 'missed_mate' | 'tactical_blunder'
-                mateIn: result.mateIn ?? null,
-                // Quantitative metadata
-                wpLoss: parseFloat(rawWpLoss.toFixed(4)),
-                preBlunderWp: parseFloat(before.wp.toFixed(4)),
-                solutionMoveCount: result.solutionSequence.length,
-                // Game context
-                playerColor,
-                gameId,
-                ply,
-            });
-
-            extracted++;
+            candidates.push({ ply, beforeLight, isWhiteMove, movePlayed, isEngineBest, puzzleFen, preBlunderFen, label });
         }
+
+        const heavyDepth = Math.max(depth, 20);
+        let nextCandidateIdx = 0;
+
+        const heavyWorkers = engines.map(async (engine) => {
+            while (nextCandidateIdx < candidates.length) {
+                if (signal.aborted) break;
+                const candidate = candidates[nextCandidateIdx++];
+                const { ply, beforeLight, isWhiteMove, movePlayed, isEngineBest, puzzleFen, preBlunderFen, label } = candidate;
+
+                try {
+                    const raw = await engine.analyzePosition(puzzleFen, heavyDepth, signal, null, 2);
+                    if (signal.aborted) break;
+
+                    const isBlackTurnPuzzle = puzzleFen.includes(' b ');
+                    const afterHeavy = {
+                        wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurnPuzzle),
+                        pv: raw.lines?.[0]?.pv ?? '',
+                        mate: raw.mate ?? null,
+                        line1Score: raw.lines?.[0]?.score ?? raw.score ?? 0,
+                        line2Score: raw.lines?.[1]?.score ?? null,
+                    };
+
+                    const finalWpLoss = isWhiteMove
+                        ? (beforeLight.wp - afterHeavy.wp)
+                        : (afterHeavy.wp - beforeLight.wp);
+
+                    if (finalWpLoss < MIN_WP_LOSS_FOR_PUZZLE) continue;
+
+                    const result = evaluatePuzzleCandidate({
+                        beforeEval: beforeLight,
+                        afterEval: afterHeavy,
+                        isWhiteMove,
+                        isEngineBest,
+                        wpLoss: finalWpLoss,
+                        puzzleFen,
+                        preBlunderFen,
+                    });
+
+                    if (!result.accept) {
+                        console.log(`[Puzzle] Ply ${ply} rejected — ${result.reason}`);
+                        continue;
+                    }
+
+                    const playerColor = isWhiteMove ? 'black' : 'white';
+
+                    console.log(
+                        `[Puzzle] ✓ Ply ${ply} | Type: ${result.puzzleType}` +
+                        (result.mateIn ? ` (Mate in ${result.mateIn})` : '') +
+                        ` | Solver: ${playerColor}` +
+                        ` | Solution: ${result.solutionSequence.join(' ')}`
+                    );
+
+                    PuzzleStore.save({
+                        fen: puzzleFen,
+                        solutionSequence: result.solutionSequence,
+                        playedMove: movePlayed,
+                        label,
+                        puzzleType: result.puzzleType,
+                        mateIn: result.mateIn ?? null,
+                        wpLoss: parseFloat(finalWpLoss.toFixed(4)),
+                        preBlunderWp: parseFloat(beforeLight.wp.toFixed(4)),
+                        solutionMoveCount: result.solutionSequence.length,
+                        playerColor,
+                        gameId,
+                        ply,
+                    });
+
+                    extracted++;
+                } catch (e) {
+                    if (e.name === 'AbortError') break;
+                    console.error(`[Puzzle] Heavy analysis failed at ply ${ply}:`, e.message);
+                }
+            }
+        });
+
+        await Promise.all(heavyWorkers);
 
         return extracted;
     }

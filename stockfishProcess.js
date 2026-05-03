@@ -17,6 +17,9 @@ class StockfishProcess {
         this._initPromise = null;
         this._idlePromise = Promise.resolve();
         this._idleResolve = null;
+        // Tracks the MultiPV value last sent to the engine process.
+        // Avoids redundant setoption+isready round-trips between positions.
+        this._activeMultiPv = DEFAULT_CONFIG.multiPv;
         this._engine.onDied = () => this._onEngineDied();
     }
 
@@ -27,12 +30,15 @@ class StockfishProcess {
             const prev = this._config;
             if (JSON.stringify(merged) !== JSON.stringify(prev)) {
                 if (merged.threads !== prev.threads) {
+                    console.log(`[Engine] Updating Threads: ${prev.threads} -> ${merged.threads}`);
                     this._engine.send(`setoption name Threads value ${merged.threads}`);
                 }
                 if (merged.hash !== prev.hash) {
+                    console.log(`[Engine] Updating Hash: ${prev.hash}MB -> ${merged.hash}MB`);
                     this._engine.send(`setoption name Hash value ${merged.hash}`);
                 }
                 if (merged.multiPv !== prev.multiPv) {
+                    console.log(`[Engine] Updating MultiPV: ${prev.multiPv} -> ${merged.multiPv}`);
                     this._engine.send(`setoption name MultiPV value ${merged.multiPv}`);
                 }
                 this._config = merged;
@@ -172,8 +178,31 @@ class StockfishProcess {
                 }
             };
 
-            this._engine.send(`setoption name MultiPV value ${effectiveMultiPv}`);
-            this._engine.send('isready');
+            if (effectiveMultiPv !== this._activeMultiPv) {
+                // MultiPV changed — must send setoption and sync with isready
+                // before starting the search so Stockfish allocates the right
+                // number of PV lines. isready forces all threads to synchronize,
+                // so we only pay this cost when the value actually changes.
+                console.log(`[Engine] MultiPV changed: ${this._activeMultiPv} -> ${effectiveMultiPv}`);
+                this._activeMultiPv = effectiveMultiPv;
+                this._engine.send(`setoption name MultiPV value ${effectiveMultiPv}`);
+                this._engine.send('isready');
+            } else {
+                // MultiPV unchanged — skip the setoption+isready round-trip.
+                // Send position + go directly; this eliminates the per-position
+                // thread-synchronization overhead that caused 10 threads to be
+                // dramatically slower than 2 threads.
+                if (signal?.aborted || this._engine.state === EngineState.STOPPING) {
+                    this._engine.state = EngineState.IDLE;
+                    restoreOnDied();
+                    if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
+                    settle(new DOMException('Aborted', 'AbortError'), null);
+                    return;
+                }
+                this._engine.lineHandler = searchHandler;
+                this._engine.send(`position fen ${fen}`);
+                this._engine.send(`go depth ${depth}`);
+            }
         });
     }
 
@@ -194,6 +223,7 @@ class StockfishProcess {
 
     destroy() {
         this._initPromise = null;
+        this._activeMultiPv = DEFAULT_CONFIG.multiPv; // reset so next spawn re-applies correctly
         if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
         this._idlePromise = Promise.resolve();
         this._engine.kill();
@@ -211,6 +241,7 @@ class StockfishProcess {
 
             this._engine.lineHandler = (line) => {
                 if (line === 'uciok') {
+                    console.log(`[Engine] Initializing with Threads: ${this._config.threads}, Hash: ${this._config.hash}MB, MultiPV: ${this._config.multiPv}`);
                     this._engine.send(`setoption name Threads value ${this._config.threads}`);
                     this._engine.send(`setoption name Hash value ${this._config.hash}`);
                     this._engine.send(`setoption name MultiPV value ${this._config.multiPv}`);
@@ -230,6 +261,7 @@ class StockfishProcess {
 
     _onEngineDied() {
         this._initPromise = null;
+        this._activeMultiPv = DEFAULT_CONFIG.multiPv; // reset so next spawn re-applies correctly
         if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
         this._idlePromise = Promise.resolve();
         this._engine.onDied = () => this._onEngineDied();
