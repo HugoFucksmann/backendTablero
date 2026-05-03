@@ -246,6 +246,12 @@ class PuzzleExtractor {
 
                     const playerColor = isWhiteMove ? 'black' : 'white';
 
+                    const mapMove = (m) => typeof m === 'string' ? m : (m.lan ?? m.san);
+                    const startIndex = Math.max(0, ply - 2);
+                    const baseFen = positions[startIndex];
+                    const contextMoves = history.slice(startIndex, ply).map(mapMove);
+                    const originalContinuation = history.slice(ply + 1, ply + 1 + result.solutionSequence.length).map(mapMove);
+
                     console.log(
                         `[Puzzle] ✓ Ply ${ply} | Type: ${result.puzzleType}` +
                         (result.mateIn ? ` (Mate in ${result.mateIn})` : '') +
@@ -255,6 +261,10 @@ class PuzzleExtractor {
 
                     PuzzleStore.save({
                         fen: puzzleFen,
+                        baseFen: baseFen,
+                        contextMoves: contextMoves,
+                        originalContinuation: originalContinuation,
+                        preBlunderFen: preBlunderFen,
                         solutionSequence: result.solutionSequence,
                         playedMove: movePlayed,
                         label,
