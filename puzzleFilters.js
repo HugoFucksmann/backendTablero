@@ -111,7 +111,7 @@ function isBalancedPosition(wp, isWhiteMove) {
  */
 const MIN_SEQUENCE_MOVES = 3; // must show: punish → defense → consequence
 
-function extractForcedSequence(pvString, startFen, maxMoves = MAX_SEQUENCE_DEPTH) {
+function extractForcedSequence(pvString, startFen, maxMoves = MAX_SEQUENCE_DEPTH, isMatePuzzle = false) {
     if (!pvString || !startFen) return [];
 
     const candidates = pvString.trim().split(' ').filter(Boolean).slice(0, maxMoves);
@@ -133,9 +133,18 @@ function extractForcedSequence(pvString, startFen, maxMoves = MAX_SEQUENCE_DEPTH
 
             if (isMate) break; // puzzle ends at checkmate regardless of length
 
-            // Only cut on quiet moves once we've shown the minimum required context.
-            // Before MIN_SEQUENCE_MOVES, always continue so the "lost move" is visible.
-            if (sequence.length >= MIN_SEQUENCE_MOVES && !isCapture && !givesCheck) break;
+            if (!isMatePuzzle) {
+                // Only cut on quiet moves once we've shown the minimum required context.
+                // We MUST only cut after a solver's move (sequence.length is odd).
+                if (sequence.length >= MIN_SEQUENCE_MOVES && sequence.length % 2 !== 0 && !isCapture && !givesCheck) break;
+            }
+        }
+
+        // A puzzle must always end on the solver's turn (odd length).
+        // If the sequence ended on an even length (opponent's turn) because of maxMoves or PV length,
+        // we remove the last opponent move to end on the solver's previous move.
+        if (sequence.length > 0 && sequence.length % 2 === 0) {
+            sequence.pop();
         }
 
         return sequence;
@@ -174,7 +183,7 @@ function evaluatePuzzleCandidate(ctx) {
     // ── Gate 2: error allowed a forced mate — always a puzzle, skip balance check ─────
     if (allowsMate(afterEval.mate)) {
         const pv = afterEval.pv || '';
-        const seq = extractForcedSequence(pv, puzzleFen);
+        const seq = extractForcedSequence(pv, puzzleFen, MAX_SEQUENCE_DEPTH, true);
         if (seq.length === 0) return { accept: false, reason: 'allows_mate but no valid sequence' };
         return {
             accept: true,
@@ -186,7 +195,7 @@ function evaluatePuzzleCandidate(ctx) {
 
     // ── Gate 3: the punishing move must be tactical ─────
     const pv = afterEval.pv || '';
-    const seq = extractForcedSequence(pv, puzzleFen);
+    const seq = extractForcedSequence(pv, puzzleFen, MAX_SEQUENCE_DEPTH, false);
     if (seq.length === 0) {
         return { accept: false, reason: 'could not build a valid forced sequence' };
     }
