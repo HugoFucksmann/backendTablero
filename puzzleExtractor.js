@@ -6,7 +6,7 @@ const { ChessMath } = require('./chessMath');
 const { EvaluationEngine } = require('./evaluationRules');
 const { buildPositions } = require('./analysisUtils');
 const { PuzzleStore } = require('./puzzleStore');
-const { evaluatePuzzleCandidate, isTacticalMove, isMissedMate } = require('./puzzleFilters');
+const { evaluatePuzzleCandidate, isTacticalMove, allowsMate } = require('./puzzleFilters');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -190,8 +190,11 @@ class PuzzleExtractor {
             const preBlunderFen = positions[ply];
             const puzzleFen = positions[ply + 1];
 
-            if (!isMissedMate(beforeLight.mate, isEngineBest) && !isTacticalMove(preBlunderFen, beforeLight.bestMove)) {
-                console.log(`[Puzzle] Ply ${ply} rejected — best move not tactical (positional error)`);
+            const isPunishmentTactical = isTacticalMove(puzzleFen, afterLight.bestMove);
+            const mateAllowed = allowsMate(afterLight.mate);
+
+            if (!mateAllowed && !isPunishmentTactical) {
+                console.log(`[Puzzle] Ply ${ply} rejected — punishment is not tactical (positional blunder)`);
                 continue;
             }
 

@@ -48,18 +48,16 @@ function isTacticalMove(fen, uciMove) {
 }
 
 /**
- * Returns true if the engine had a forced mate available at this position
- * but the player didn't play the best move.
+ * Returns true if the blunder allowed a forced mate for the opponent.
  *
- * `beforeMate` — the `mate` field from the pre-blunder eval (null = no mate).
- * Positive value means the side-to-move has the forced mate.
+ * `afterMate` — the `mate` field from the post-blunder eval (null = no mate).
+ * Positive value means the side-to-move (the solver) has the forced mate.
  *
- * @param {number|null} beforeMate
- * @param {boolean}     isEngineBest
+ * @param {number|null} afterMate
  * @returns {boolean}
  */
-function isMissedMate(beforeMate, isEngineBest) {
-    return !isEngineBest && beforeMate !== null && beforeMate > 0;
+function allowsMate(afterMate) {
+    return afterMate !== null && afterMate > 0;
 }
 
 /**
@@ -173,23 +171,27 @@ function evaluatePuzzleCandidate(ctx) {
         return { accept: false, reason: 'wpLoss too small' };
     }
 
-    // ── Gate 2: missed forced mate — always a puzzle, skip balance check ─────
-    const missedMate = isMissedMate(beforeEval.mate, isEngineBest);
-    if (missedMate) {
+    // ── Gate 2: error allowed a forced mate — always a puzzle, skip balance check ─────
+    if (allowsMate(afterEval.mate)) {
         const pv = afterEval.pv || '';
         const seq = extractForcedSequence(pv, puzzleFen);
-        if (seq.length === 0) return { accept: false, reason: 'missed_mate but no valid sequence' };
+        if (seq.length === 0) return { accept: false, reason: 'allows_mate but no valid sequence' };
         return {
             accept: true,
-            puzzleType: 'missed_mate',
-            mateIn: beforeEval.mate,
+            puzzleType: 'mate',
+            mateIn: afterEval.mate,
             solutionSequence: seq,
         };
     }
 
-    // ── Gate 3: the move the player *should* have played must be tactical ─────
-    if (!isTacticalMove(preBlunderFen, beforeEval.bestMove)) {
-        return { accept: false, reason: 'best move was not tactical (positional error)' };
+    // ── Gate 3: the punishing move must be tactical ─────
+    const pv = afterEval.pv || '';
+    const seq = extractForcedSequence(pv, puzzleFen);
+    if (seq.length === 0) {
+        return { accept: false, reason: 'could not build a valid forced sequence' };
+    }
+    if (!isTacticalMove(puzzleFen, seq[0])) {
+        return { accept: false, reason: 'punishment move is not tactical (positional error)' };
     }
 
     // ── Gate 4: solution must be unambiguous (clear winner in post-blunder pos) ─
@@ -200,13 +202,6 @@ function evaluatePuzzleCandidate(ctx) {
     // ── Gate 5: position must have been balanced before the blunder ───────────
     if (!isBalancedPosition(beforeEval.wp, isWhiteMove)) {
         return { accept: false, reason: 'position already decided before blunder' };
-    }
-
-    // ── Gate 6: build and validate forced sequence ────────────────────────────
-    const pv = afterEval.pv || '';
-    const seq = extractForcedSequence(pv, puzzleFen);
-    if (seq.length === 0) {
-        return { accept: false, reason: 'could not build a valid forced sequence' };
     }
 
     return {
@@ -220,7 +215,7 @@ function evaluatePuzzleCandidate(ctx) {
 module.exports = {
     // Individual filters (useful for unit tests)
     isTacticalMove,
-    isMissedMate,
+    allowsMate,
     hasClearSolution,
     isBalancedPosition,
     extractForcedSequence,
