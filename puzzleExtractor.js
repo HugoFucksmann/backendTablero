@@ -78,21 +78,23 @@ class PuzzleExtractor {
             for (let i = 0; i < games.length; i++) {
                 if (signal.aborted) break;
 
-                const { pgn, history, gameId, startFen } = games[i];
+                const { pgn, history, gameId, startFen: providedStartFen } = games[i];
                 let processedHistory = history;
+                let finalStartFen = providedStartFen;
 
                 if (!processedHistory && pgn) {
                     try {
                         const chess = new Chess();
                         chess.loadPgn(pgn);
                         processedHistory = chess.history({ verbose: true });
+                        finalStartFen = finalStartFen || chess.header().FEN || null;
                     } catch (e) {
                         console.error(`[Puzzle] Error parsing PGN for game ${gameId}:`, e.message);
                         continue;
                     }
                 }
 
-                const extracted = await this._processGame(processedHistory, gameId, depth, engines, signal, startFen);
+                const extracted = await this._processGame(processedHistory, gameId, depth, engines, signal, finalStartFen);
 
                 // Check abort status immediately after the game finishes — _processGame
                 // may have returned early due to cancellation (extracted=0) but the loop
