@@ -1,5 +1,6 @@
 'use strict';
 
+const fetch = global.fetch || require('node-fetch');
 const { OpeningBook } = require('./openingBook');
 
 const MAX_BOOK_PLY = 30;
@@ -66,10 +67,9 @@ const OpeningService = {
                 lastTheoryPly = ply;
                 consecutiveNonBook = 0;
                 onPlyResolved(ply, true);
-                continue; // Found locally, skip Lichess for this ply
+                continue;
             }
 
-            // Fallback to Lichess only if not in local book
             const fenBeforeMove = positions[ply].split(' ').slice(0, 4).join(' ');
             const url = `https://explorer.lichess.ovh/lichess?fen=${encodeURIComponent(fenBeforeMove)}&ratings=${RATINGS_PARAM}`;
             const headers = { 'User-Agent': 'ChessAnalysisLocalApp/1.0', 'Accept': 'application/json' };
@@ -97,7 +97,6 @@ const OpeningService = {
                     const moveObj = history[ply];
                     const playedUci = typeof moveObj === 'string' ? moveObj : moveObj.lan;
                     if (!playedUci) {
-                        // If we don't have UCI, we can't accurately check Lichess explorer by move
                         consecutiveNonBook++;
                         onPlyResolved(ply, false);
                         success = true;
@@ -151,6 +150,16 @@ const OpeningService = {
             if (openingCache.size >= MAX_CACHE_SIZE) openingCache.delete(openingCache.keys().next().value);
             openingCache.set(gameId, result);
             onOpeningDetected?.(result);
+        }
+    },
+
+    clearCache(gameId) {
+        if (gameId) {
+            openingCache.delete(gameId);
+            console.log(`[Opening] Cache cleared for gameId: ${gameId}`);
+        } else {
+            openingCache.clear();
+            console.log(`[Opening] All cache cleared`);
         }
     }
 };

@@ -3,9 +3,9 @@
 const { Chess } = require('chess.js');
 const { ChessMath } = require('./chessMath');
 
-function buildPositions(history) {
+function buildPositions(history, startFen = null) {
     const positions = [];
-    const game = new Chess();
+    const game = startFen ? new Chess(startFen) : new Chess();
     positions.push(game.fen());
     for (const m of history) {
         game.move(typeof m === 'string' ? m : (m.san ?? m.lan ?? m));

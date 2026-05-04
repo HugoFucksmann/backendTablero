@@ -95,7 +95,7 @@ class AnalysisQueue {
     /**
      * Analyzes a full game history.
      */
-    async analyzeGame(history, currentIndex, gameId, engineConfig = {}, callbacks = {}) {
+    async analyzeGame(history, currentIndex, gameId, engineConfig = {}, callbacks = {}, startFen = null) {
         this.cancel();
         if (!history || history.length === 0) return;
 
@@ -110,7 +110,8 @@ class AnalysisQueue {
         try {
             await this._gameCoordinator.run(history, currentIndex, gameId, engineConfig, {
                 ...callbacks,
-                signal
+                signal,
+                startFen
             });
             // GameAnalysisCoordinator exits cleanly on abort without throwing,
             // so we must check the signal here to distinguish cancel from complete.

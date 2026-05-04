@@ -5,8 +5,8 @@
 
 ## ⚠️ Reglas Críticas Antes de Tocar Cualquier Cosa
 
-1. **`evaluationRules.js` está DUPLICADO** — existe en backend (`backendTablero/evaluationRules.js`) y frontend (`tableroAnalisis/src/analysis/evaluationRules.js`). Cualquier cambio en fórmulas o umbrales **debe aplicarse en ambos archivos simultáneamente**, o los resultados diferirán entre modo WASM y modo Nativo.
-2. **`analysisUtils.js` también está DUPLICADO** — existe en ambos proyectos. Cambios en `buildPositions`, `buildAnalysisOrder` o `mapLines` deben replicarse.
+1. **Fuente de Verdad Única** — El backend es ahora el único encargado de la lógica de ajedrez. El frontend ha sido limpiado de archivos duplicados como `evaluationRules.js`, `openingService.js` y `chessMath.js`.
+2. **Coherencia de Versiones** — Aunque el front ya no tenga lógica, cualquier cambio en la clasificación o precisión debe documentarse aquí para que la UI sepa qué labels esperar.
 3. **El engine es una máquina de estados** — nunca envíes comandos UCI sin verificar el estado actual. Enviar `go` mientras está en `SEARCHING` corrompe la salida.
 4. **Cada sesión WebSocket tiene su propia instancia de engine** — no hay estado compartido entre clientes.
 5. **`cancel()` es la única forma segura de interrumpir** — no mates el proceso directamente.
@@ -270,9 +270,7 @@ acc = Math.max(0, 103.1668 * Math.exp(-0.07354 * lossPct) - 3.1669)
 
 ---
 
-## 🛠️ Utilidades: `analysisUtils.js` (DUPLICADO)
-
-> ⚠️ Este archivo existe en backend y frontend. Cambios deben replicarse en ambos.
+## 🛠️ Utilidades: `analysisUtils.js`
 
 | Función | Descripción |
 | :--- | :--- |

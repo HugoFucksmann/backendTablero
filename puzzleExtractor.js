@@ -78,7 +78,7 @@ class PuzzleExtractor {
             for (let i = 0; i < games.length; i++) {
                 if (signal.aborted) break;
 
-                const { pgn, history, gameId } = games[i];
+                const { pgn, history, gameId, startFen } = games[i];
                 let processedHistory = history;
 
                 if (!processedHistory && pgn) {
@@ -92,7 +92,7 @@ class PuzzleExtractor {
                     }
                 }
 
-                const extracted = await this._processGame(processedHistory, gameId, depth, engines, signal);
+                const extracted = await this._processGame(processedHistory, gameId, depth, engines, signal, startFen);
 
                 // Check abort status immediately after the game finishes — _processGame
                 // may have returned early due to cancellation (extracted=0) but the loop
@@ -126,10 +126,10 @@ class PuzzleExtractor {
 
     // ── Private ───────────────────────────────────────────────────────────────
 
-    async _processGame(history, gameId, depth, engines, signal) {
+    async _processGame(history, gameId, depth, engines, signal, startFen = null) {
         if (!history || history.length === 0) return 0;
 
-        const positions = buildPositions(history);
+        const positions = buildPositions(history, startFen);
         const lightEvalResults = new Array(positions.length).fill(null);
         let extracted = 0;
 

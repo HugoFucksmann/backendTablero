@@ -13,7 +13,7 @@ class GameAnalysisCoordinator {
 
     async run(history, currentIndex, gameId, engineConfig = {}, callbacks = {}) {
         const {
-            onStatus, onProgress, onMoveResult, onOpeningDetected, onComplete, onError, signal
+            onStatus, onProgress, onMoveResult, onOpeningDetected, onComplete, onError, signal, startFen
         } = callbacks;
 
         const depth = engineConfig.depth ?? 18;
@@ -55,7 +55,7 @@ class GameAnalysisCoordinator {
 
             engines.forEach(e => e.newGame());
 
-            const positions = buildPositions(history);
+            const positions = buildPositions(history, startFen);
             const totalMoves = history.length;
 
             const evalResults = new Array(positions.length).fill(null);

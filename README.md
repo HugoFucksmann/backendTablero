@@ -8,7 +8,7 @@ Este es el motor de análisis nativo para el **Tablero de Ajedrez Pro**. Al ejec
 - **⚡ Rendimiento Nativo**: Utiliza Stockfish compilado para tu sistema operativo, permitiendo análisis más profundos en menos tiempo.
 - **🧩 Extractor de Puzzles**: Genera automáticamente tácticas de entrenamiento a partir de tus partidas basándose en errores graves detectados por el motor.
 - **🌍 Detección de Aperturas Híbrida**: Combina un libro local ultra-rápido (TSV) con la API de Lichess para una identificación instantánea de teoría.
-- **📊 Clasificación Avanzada**: Lógica de clasificación de jugadas al estilo Chess.com (*Brillante*, *Mejor*, *Excelente*, *Bueno*, *Imprecisión*, *Error*, *Error Grave*).
+- **🎯 Fuente de Verdad Única**: Toda la lógica de ajedrez (clasificación, precisión, aperturas) vive aquí. El frontend es un cliente ligero.
 - **🔄 Multi-Cliente**: Soporta múltiples conexiones simultáneas vía WebSockets.
 
 ## 🛠️ Instalación y Uso
@@ -43,7 +43,7 @@ Puedes configurar el comportamiento del servidor mediante variables de entorno:
 
 ## 🧩 Integración con el Frontend
 
-En el tablero de ajedrez, selecciona **"Backend Nativo"** en la configuración del motor. El frontend se conectará automáticamente a este servidor y delegará todas las tareas pesadas de procesamiento.
+La aplicación está configurada para conectarse automáticamente a este servidor. No es necesario seleccionar ningún modo en el frontend, ya que el soporte para análisis local (WASM) ha sido eliminado para garantizar la máxima precisión y rendimiento.
 
 ---
 Desarrollado con ❤️ para amantes del ajedrez y el código de alto rendimiento.

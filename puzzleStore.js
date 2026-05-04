@@ -26,6 +26,15 @@ const PuzzleStore = {
 
     save(puzzle) {
         const data = _load();
+        
+        // Evitar duplicados (misma posición y misma secuencia de solución)
+        const isDuplicate = data.puzzles.some(p => 
+            p.fen === puzzle.fen && 
+            JSON.stringify(p.solutionSequence) === JSON.stringify(puzzle.solutionSequence)
+        );
+
+        if (isDuplicate) return null;
+
         const entry = {
             id: randomUUID(),
             createdAt: new Date().toISOString(),

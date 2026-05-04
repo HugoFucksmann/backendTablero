@@ -7,8 +7,8 @@ const { AnalysisQueue } = require('./analysisQueue');
 const { PuzzleExtractor } = require('./puzzleExtractor');
 const { PuzzleStore } = require('./puzzleStore');
 const { OpeningBook } = require('./openingBook');
+const { OpeningService } = require('./openingService');
 
-// Load opening book once at startup
 OpeningBook.load();
 
 const PORT = parseInt(process.env.PORT || '9001', 10);
@@ -39,9 +39,8 @@ wss.on('connection', (ws) => {
         };
 
         switch (msg.type) {
-            // ── Analysis ─────────────────────────────────────────────────────
             case 'analyze_position': {
-                const { fen, moveIndex, type: _type, ...config } = msg;
+                const { fen, moveIndex, ...config } = msg;
                 queue.analyzePosition(fen, moveIndex, config, {
                     onProgress: (data) => send({ type: 'position_progress', ...data }),
                     onResult: (data) => send({ type: 'position_result', ...data }),
@@ -51,7 +50,7 @@ wss.on('connection', (ws) => {
             }
 
             case 'analyze_game': {
-                const { history, currentIndex, gameId, engineConfig } = msg;
+                const { history, currentIndex, gameId, engineConfig, startFen } = msg;
                 queue.analyzeGame(history, currentIndex, gameId, engineConfig, {
                     onStatus: (running) => send({ type: 'status', running }),
                     onProgress: (pct, label) => send({ type: 'progress', pct, label }),
@@ -63,7 +62,7 @@ wss.on('connection', (ws) => {
                     onComplete: (acc) => send({ type: 'complete', accuracy: acc }),
                     onCancelled: () => send({ type: 'cancelled' }),
                     onError: (err) => send({ type: 'error', message: err.message }),
-                }).catch((err) => {
+                }, startFen).catch((err) => {
                     if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
                 });
                 break;
@@ -72,13 +71,14 @@ wss.on('connection', (ws) => {
             case 'cancel': {
                 queue.cancel();
                 puzzleExtractor.cancel();
-                // onCancelled callbacks will fire asynchronously from the running tasks.
-                // No need to send 'cancelled' here — the tasks themselves send it once
-                // they confirm the abort, avoiding a double-cancelled race.
                 break;
             }
 
-            // ── Puzzle Extraction ─────────────────────────────────────────────
+            case 'clear_cache': {
+                OpeningService.clearCache(msg.gameId);
+                break;
+            }
+
             case 'extract_puzzles': {
                 const { games, engineConfig = {} } = msg;
                 if (!Array.isArray(games) || games.length === 0) {
@@ -99,12 +99,9 @@ wss.on('connection', (ws) => {
 
             case 'cancel_extraction': {
                 puzzleExtractor.cancel();
-                // extraction_cancelled will be sent via the onCancelled callback once
-                // the running extraction confirms it has stopped cleanly.
                 break;
             }
 
-            // ── Puzzle Library ────────────────────────────────────────────────
             case 'get_puzzles': {
                 const puzzles = PuzzleStore.getAll();
                 send({ type: 'puzzle_list', puzzles });
