@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { AnalysisQueue } = require('./Analysisqueue');
+const { AnalysisQueue } = require('./analysisQueue');
 const { PuzzleExtractor } = require('./puzzleExtractor');
 const { PuzzleStore } = require('./puzzleStore');
 const { OpeningBook } = require('./openingBook');
