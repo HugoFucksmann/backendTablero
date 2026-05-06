@@ -161,15 +161,6 @@ const OpeningService = {
             openingCache.clear();
             console.log(`[Opening] All cache cleared`);
         }
-    },
-    clearCache(gameId) {
-        if (gameId) {
-            openingCache.delete(gameId);
-            console.log(`[Opening] Cache cleared for gameId: ${gameId}`);
-        } else {
-            openingCache.clear();
-            console.log(`[Opening] All cache cleared`);
-        }
     }
 };
 

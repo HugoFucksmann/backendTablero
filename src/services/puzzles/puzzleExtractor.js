@@ -1,11 +1,11 @@
 'use strict';
 
 const { Chess } = require('chess.js');
-const { StockfishProcess } = require('./stockfishProcess');
-const { ChessMath } = require('./chessMath');
-const { EvaluationEngine } = require('./evaluationRules');
-const { buildPositions } = require('./analysisUtils');
-const { PuzzleStore } = require('./puzzleStore');
+const { StockfishProcess } = require('../../core/stockfishProcess');
+const { ChessMath } = require('../../utils/chessMath');
+const { EvaluationEngine } = require('../analysis/evaluationRules');
+const { buildPositions } = require('../../utils/analysisUtils');
+const { PuzzleStore } = require('../../storage/puzzleStore');
 const { evaluatePuzzleCandidate, isTacticalMove, allowsMate } = require('./puzzleFilters');
 
 // ─── Constants ────────────────────────────────────────────────────────────────

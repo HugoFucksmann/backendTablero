@@ -4,7 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 
-const STORE_PATH = path.join(__dirname, 'puzzles.json');
+// En la nueva estructura, puzzles.json está en el directorio data/ en la raíz
+const STORE_PATH = path.join(__dirname, '..', '..', 'data', 'puzzles.json');
+
+// Asegurar que el directorio data exista
+const DATA_DIR = path.dirname(STORE_PATH);
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 
 function _load() {
     if (!fs.existsSync(STORE_PATH)) return { puzzles: [] };

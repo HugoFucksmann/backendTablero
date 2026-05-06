@@ -1,11 +1,11 @@
 'use strict';
 
-const { ChessMath } = require('./chessMath');
+const { ChessMath } = require('../../utils/chessMath');
 const { EvaluationEngine } = require('./evaluationRules');
-const { OpeningService } = require('./openingService');
-const { buildPositions, buildAnalysisOrder, mapLines } = require('./analysisUtils');
+const { OpeningService } = require('../openings/openingService');
+const { buildPositions, buildAnalysisOrder, mapLines } = require('../../utils/analysisUtils');
 const { MoveClassifier } = require('./moveClassifier');
-const { StockfishProcess } = require('./stockfishProcess');
+const { StockfishProcess } = require('../../core/stockfishProcess');
 
 class GameAnalysisCoordinator {
     constructor() {

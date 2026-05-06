@@ -1,8 +1,8 @@
 'use strict';
 
-const { StockfishProcess } = require('./stockfishProcess');
-const { ChessMath } = require('./chessMath');
-const { mapLines } = require('./analysisUtils');
+const { StockfishProcess } = require('../../core/stockfishProcess');
+const { ChessMath } = require('../../utils/chessMath');
+const { mapLines } = require('../../utils/analysisUtils');
 const { GameAnalysisCoordinator } = require('./gameAnalysisCoordinator');
 
 /**

@@ -5,7 +5,7 @@
       "createdAt": "2026-05-04T22:25:15.629Z",
       "solvedCount": 1,
       "fen": "2k4r/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP4/2PNKP2/R2Q3B b - - 4 18",
-      "baseFen": "2kr4/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP1N2/2P2P2/R2QK2B w Q - 1 17",
+      "baseFen": "2kr4/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP3N2/2P2P2/R2QK2B w Q - 1 17",
       "contextMoves": [
         "f3d2",
         "d8h8"
@@ -33,7 +33,7 @@
       "createdAt": "2026-05-04T22:25:16.097Z",
       "solvedCount": 0,
       "fen": "2kr4/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP4/2PN1P2/R2QK2B b Q - 2 17",
-      "baseFen": "r3k3/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP1N2/2P2PB1/R2QK2r w Qq - 0 16",
+      "baseFen": "r3k3/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP3N2/2P2PB1/R2QK2r w Qq - 0 16",
       "contextMoves": [
         "g2h1",
         "e8c8"
@@ -41,7 +41,7 @@
       "originalContinuation": [
         "d8h8"
       ],
-      "preBlunderFen": "2kr4/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP1N2/2P2P2/R2QK2B w Q - 1 17",
+      "preBlunderFen": "2kr4/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP3N2/2P2P2/R2QK2B w Q - 1 17",
       "solutionSequence": [
         "f6f2"
       ],

@@ -5,7 +5,7 @@
     "main": "service.js",
     "type": "commonjs",
     "scripts": {
-        "start": "node service.js"
+        "start": "node src/server.js"
     },
     "dependencies": {
         "chess.js": "^1.4.0",

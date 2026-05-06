@@ -23,7 +23,8 @@ const fs   = require('fs');
 const path = require('path');
 const { Chess } = require('chess.js');
 
-const DATA_DIR   = path.join(__dirname, 'data');
+// En la nueva estructura, data/ está en la raíz del proyecto
+const DATA_DIR   = path.join(__dirname, '..', '..', '..', 'data');
 const TSV_FILES  = ['a.tsv', 'b.tsv', 'c.tsv', 'd.tsv', 'e.tsv'];
 const MAX_BACK   = 10; // maximum plies to search backwards in findLastKnown
 

@@ -3,19 +3,22 @@ require('dotenv').config();
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { AnalysisQueue } = require('./analysisQueue');
-const { PuzzleExtractor } = require('./puzzleExtractor');
-const { PuzzleStore } = require('./puzzleStore');
-const { OpeningBook } = require('./openingBook');
-const { OpeningService } = require('./openingService');
 
+// Imports refactorizados
+const { AnalysisQueue } = require('./services/analysis/analysisQueue');
+const { PuzzleExtractor } = require('./services/puzzles/puzzleExtractor');
+const { PuzzleStore } = require('./storage/puzzleStore');
+const { OpeningBook } = require('./services/openings/openingBook');
+const { OpeningService } = require('./services/openings/openingService');
+
+// Inicializar el libro de aperturas al arranque
 OpeningBook.load();
 
 const PORT = parseInt(process.env.PORT || '9001', 10);
 
 const server = http.createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'chess-analysis-server', version: '1.0.0' }));
+    res.end(JSON.stringify({ status: 'chess-analysis-server', version: '1.1.0' }));
 });
 
 const wss = new WebSocketServer({ server });
@@ -122,6 +125,35 @@ wss.on('connection', (ws) => {
 
             case 'puzzle_solved': {
                 PuzzleStore.incrementSolved(msg.id);
+                break;
+            }
+
+            case 'get_stats': {
+                // Mock data for user statistics (Etapa 5 del roadmap)
+                const mockStats = {
+                    games: [
+                        { date: new Date(Date.now() - 86400000 * 5).toISOString(), timeControl: '10m', accuracy: 82, win: true, color: 'white', opening: 'Ruy Lopez' },
+                        { date: new Date(Date.now() - 86400000 * 4).toISOString(), timeControl: '5m', accuracy: 75, win: false, color: 'black', opening: 'Sicilian Defense' },
+                        { date: new Date(Date.now() - 86400000 * 3).toISOString(), timeControl: '10m', accuracy: 88, win: true, color: 'white', opening: 'Queen\'s Gambit' },
+                        { date: new Date(Date.now() - 86400000 * 2).toISOString(), timeControl: '5m', accuracy: 68, win: false, color: 'black', opening: 'Caro-Kann' },
+                        { date: new Date(Date.now() - 86400000 * 1).toISOString(), timeControl: '10m', accuracy: 91, win: true, color: 'white', opening: 'Italian Game' },
+                        { date: new Date(Date.now() - 86400000 * 0.5).toISOString(), timeControl: '5m', accuracy: 84, win: true, color: 'white', opening: 'London System' },
+                        { date: new Date(Date.now() - 86400000 * 0.2).toISOString(), timeControl: '10m', accuracy: 79, win: false, color: 'black', opening: 'French Defense' },
+                        { date: new Date().toISOString(), timeControl: '5m', accuracy: 92, win: true, color: 'white', opening: 'Sicilian Defense' },
+                    ],
+                    tacticalBreakdown: [
+                        { motive: 'Tenedor', severity: 75 },
+                        { motive: 'Clavada', severity: 40 },
+                        { motive: 'Ataque Descubierto', severity: 60 },
+                        { motive: 'Mate en 1', severity: 20 },
+                    ],
+                    accuracyByPhase: [
+                        { phase: 'Apertura', accuracy: 92, color: '#4caf50' },
+                        { phase: 'Medio Juego', accuracy: 78, color: '#ff9800' },
+                        { phase: 'Final', accuracy: 85, color: '#2196f3' },
+                    ]
+                };
+                send({ type: 'stats_data', stats: mockStats });
                 break;
             }
 
