@@ -55,7 +55,7 @@ wss.on('connection', (ws) => {
             }
 
             case 'analyze_game': {
-                const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win } = msg;
+                const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win, timeControl } = msg;
                 queue.analyzeGame(history, currentIndex, gameId, engineConfig, {
                     onStatus: (running) => send({ type: 'status', running }),
                     onProgress: (pct, label) => send({ type: 'progress', pct, label }),
@@ -67,7 +67,7 @@ wss.on('connection', (ws) => {
                     onComplete: (acc) => send({ type: 'complete', accuracy: acc }),
                     onCancelled: () => send({ type: 'cancelled' }),
                     onError: (err) => send({ type: 'error', message: err.message }),
-                }, startFen, { playerColor, win }).catch((err) => {
+                }, startFen, { playerColor, win, timeControl }).catch((err) => {
                     if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
                 });
                 break;
@@ -131,35 +131,40 @@ wss.on('connection', (ws) => {
             }
 
             case 'get_stats': {
-                const stats = GameStore.getStats();
-                if (!stats) {
-                    send({ type: 'stats_data', stats: { games: [], summary: { totalAnalyses: 0, avgAccuracyWhite: 0, avgAccuracyBlack: 0 } } });
-                } else {
-                    send({ type: 'stats_data', stats });
-                }
+                GameStore.getStats().then(stats => {
+                    if (!stats) {
+                        send({ type: 'stats_data', stats: { games: [], summary: { totalAnalyses: 0, avgAccuracyWhite: 0, avgAccuracyBlack: 0 }, accuracyByPhase: [], tacticalBreakdown: [] } });
+                    } else {
+                        send({ type: 'stats_data', stats });
+                    }
+                }).catch(err => send({ type: 'error', message: err.message }));
                 break;
             }
 
             case 'get_analyses': {
-                const analyses = GameStore.getAll();
-                send({ type: 'analyses_list', analyses });
+                GameStore.getAll().then(analyses => {
+                    send({ type: 'analyses_list', analyses });
+                }).catch(err => send({ type: 'error', message: err.message }));
                 break;
             }
 
             case 'delete_analyses': {
                 const { ids } = msg;
-                GameStore.delete(ids);
-                // Refresh list
-                send({ type: 'analyses_list', analyses: GameStore.getAll() });
+                GameStore.delete(ids).then(() => {
+                    return GameStore.getAll();
+                }).then(analyses => {
+                    send({ type: 'analyses_list', analyses });
+                }).catch(err => send({ type: 'error', message: err.message }));
                 break;
             }
 
             case 'get_full_analysis': {
                 const { gameId } = msg;
-                const fullAnalysis = GameStore.getFull(gameId);
-                if (fullAnalysis) {
-                    send({ type: 'full_analysis_data', gameId, data: fullAnalysis });
-                }
+                GameStore.getFull(gameId).then(fullAnalysis => {
+                    if (fullAnalysis) {
+                        send({ type: 'full_analysis_data', gameId, data: fullAnalysis });
+                    }
+                }).catch(err => send({ type: 'error', message: err.message }));
                 break;
             }
 

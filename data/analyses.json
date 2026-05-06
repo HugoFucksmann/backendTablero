@@ -31,6 +31,58 @@
       "date": "2026-05-06T16:42:42.744Z",
       "color": "white",
       "win": true
+    },
+    {
+      "id": "57fccaf9-cc73-4e20-8c20-cd8da00f5bf4",
+      "createdAt": "2026-05-06T19:49:54.528Z",
+      "gameId": "168326072068",
+      "white": {
+        "accuracy": 86
+      },
+      "black": {
+        "accuracy": 75
+      },
+      "opening": "Ruy Lopez: Classical Variation",
+      "moveCount": 63,
+      "date": "2026-05-06T19:49:54.527Z",
+      "color": "white",
+      "win": true
+    },
+    {
+      "id": "c33f7fa2-8d5e-472b-acc1-9fe7215669aa",
+      "createdAt": "2026-05-06T20:39:29.399Z",
+      "gameId": "168325801206",
+      "white": {
+        "accuracy": 86
+      },
+      "black": {
+        "accuracy": 75
+      },
+      "opening": "Ruy Lopez: Nürnberg Variation",
+      "moveCount": 57,
+      "date": "2026-05-06T20:39:29.399Z",
+      "color": "white",
+      "win": true,
+      "timeControl": null,
+      "accuracyByPhase": [
+        {
+          "phase": "Apertura",
+          "accuracy": 97,
+          "color": "#4caf50"
+        },
+        {
+          "phase": "Medio Juego",
+          "accuracy": 97,
+          "color": "#ff9800"
+        }
+      ],
+      "labelCounts": {
+        "Error": 4,
+        "Mejor": 18,
+        "Bueno": 4,
+        "Excelente": 18,
+        "Imprecisión": 7
+      }
     }
   ]
 }
