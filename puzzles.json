@@ -1,80 +1,451 @@
 {
   "puzzles": [
     {
-      "id": "6a016f34-e10d-4ed8-8055-9de8fc19a355",
-      "createdAt": "2026-05-04T14:45:39.345Z",
+      "id": "4b218b95-7b7c-4aee-8493-d19a32908898",
+      "createdAt": "2026-05-04T22:25:15.629Z",
       "solvedCount": 1,
-      "fen": "r1bqkb1r/pp3ppp/5n2/2pp4/2PPp3/1B6/PP1PQPPP/RNB1K2R b KQkq - 0 8",
-      "baseFen": "r1bqkb1r/ppp2ppp/5n2/3p4/3Pp3/1B6/PPPP1PPP/RNBQK2R w KQkq - 2 7",
+      "fen": "2k4r/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP4/2PNKP2/R2Q3B b - - 4 18",
+      "baseFen": "2kr4/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP1N2/2P2P2/R2QK2B w Q - 1 17",
       "contextMoves": [
-        "d1e2",
-        "c7c5"
+        "f3d2",
+        "d8h8"
       ],
       "originalContinuation": [
-        "c5d4",
-        "c4d5",
-        "f6d5",
-        "e2e4",
-        "f8e7"
+        "e6g4"
       ],
-      "preBlunderFen": "r1bqkb1r/pp3ppp/5n2/2pp4/3Pp3/1B6/PPPPQPPP/RNB1K2R w KQkq - 0 8",
+      "preBlunderFen": "2k4r/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP4/2PN1P2/R2QK2B w Q - 3 18",
       "solutionSequence": [
-        "c5d4",
-        "d2d3",
-        "f8b4",
-        "c1d2",
-        "b4d6"
+        "f6f2"
       ],
-      "playedMove": "c2c4",
-      "label": "Error grave",
-      "puzzleType": "tactical_blunder",
-      "mateIn": null,
-      "wpLoss": 0.2876,
-      "preBlunderWp": 0.5541,
-      "solutionMoveCount": 5,
+      "playedMove": "e1e2",
+      "label": "Error",
+      "puzzleType": "mate",
+      "mateIn": 1,
+      "wpLoss": 0.1612,
+      "preBlunderWp": 0.1612,
+      "solutionMoveCount": 1,
       "playerColor": "black",
-      "gameId": "168147711784",
-      "ply": 14
+      "gameId": "168239734320",
+      "ply": 34
     },
     {
-      "id": "0ed79254-0b42-40ac-a585-0b1afb7f9887",
-      "createdAt": "2026-05-04T14:45:44.494Z",
+      "id": "a0bacc43-90f7-48b7-a273-ad93ad0bd85f",
+      "createdAt": "2026-05-04T22:25:16.097Z",
       "solvedCount": 0,
-      "fen": "3r2k1/p4ppp/4r3/1p6/8/4B3/P2N1PPP/R5K1 b - - 1 22",
-      "baseFen": "3r2k1/pp3ppp/4r3/8/8/4B3/P2N1PPP/R5K1 w - - 1 21",
+      "fen": "2kr4/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP4/2PN1P2/R2QK2B b Q - 2 17",
+      "baseFen": "r3k3/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP1N2/2P2PB1/R2QK2r w Qq - 0 16",
       "contextMoves": [
-        "d2c4",
-        "b7b5"
+        "g2h1",
+        "e8c8"
       ],
       "originalContinuation": [
-        "a7a5",
-        "h2h3",
-        "h7h6",
-        "d2b3",
-        "a5a4",
-        "b3c5",
-        "e6c6"
+        "d8h8"
       ],
-      "preBlunderFen": "3r2k1/p4ppp/4r3/1p6/2N5/4B3/P4PPP/R5K1 w - - 0 22",
+      "preBlunderFen": "2kr4/1pp2p2/pbnpbq2/4p3/1P2P1P1/P1NP1N2/2P2P2/R2QK2B w Q - 1 17",
       "solutionSequence": [
-        "e6e3",
-        "f2e3",
-        "d8d2",
-        "a1b1",
-        "d2a2",
-        "b1b5",
-        "g7g6"
+        "f6f2"
       ],
-      "playedMove": "c4d2",
+      "playedMove": "f3d2",
+      "label": "Error grave",
+      "puzzleType": "mate",
+      "mateIn": 1,
+      "wpLoss": 0.3484,
+      "preBlunderWp": 0.3484,
+      "solutionMoveCount": 1,
+      "playerColor": "black",
+      "gameId": "168239734320",
+      "ply": 32
+    },
+    {
+      "id": "21232ea8-ebed-4ec2-ae82-47bbe2406318",
+      "createdAt": "2026-05-04T22:25:20.500Z",
+      "solvedCount": 0,
+      "fen": "rnb1kb1r/ppppqppp/5n2/4Q3/4P3/8/PPPP1PPP/RNB1KBNR w KQkq - 1 4",
+      "baseFen": "rnbqkbnr/pppp1ppp/8/4p2Q/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 1 2",
+      "contextMoves": [
+        "g8f6",
+        "h5e5"
+      ],
+      "originalContinuation": [
+        "e5c7",
+        "e7e4",
+        "g1e2"
+      ],
+      "preBlunderFen": "rnbqkb1r/pppp1ppp/5n2/4Q3/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 0 3",
+      "solutionSequence": [
+        "e5e7",
+        "f8e7",
+        "b1c3"
+      ],
+      "playedMove": "d8e7",
       "label": "Error",
       "puzzleType": "tactical_blunder",
       "mateIn": null,
-      "wpLoss": 0.1802,
-      "preBlunderWp": 0.5,
+      "wpLoss": 0.1738,
+      "preBlunderWp": 0.466,
+      "solutionMoveCount": 3,
+      "playerColor": "white",
+      "gameId": "168237138436",
+      "ply": 5
+    },
+    {
+      "id": "8716c7fc-cd26-474e-b330-184670cc4308",
+      "createdAt": "2026-05-04T22:25:20.990Z",
+      "solvedCount": 0,
+      "fen": "r1b1kb1r/ppQp1ppp/2n2n2/8/3q4/3P4/PPP1NPPP/RNB1KB1R w KQkq - 1 7",
+      "baseFen": "rnb1kb1r/ppQp1ppp/5n2/8/4q3/8/PPPPNPPP/RNB1KB1R b KQkq - 1 5",
+      "contextMoves": [
+        "b8c6",
+        "d2d3"
+      ],
+      "originalContinuation": [
+        "e2d4",
+        "c6d4",
+        "c1e3"
+      ],
+      "preBlunderFen": "r1b1kb1r/ppQp1ppp/2n2n2/8/4q3/3P4/PPP1NPPP/RNB1KB1R b KQkq - 0 6",
+      "solutionSequence": [
+        "e2d4",
+        "c6d4",
+        "c7e5",
+        "d4e6",
+        "d3d4"
+      ],
+      "playedMove": "e4d4",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.3441,
+      "preBlunderWp": 0.5386,
+      "solutionMoveCount": 5,
+      "playerColor": "white",
+      "gameId": "168237138436",
+      "ply": 11
+    },
+    {
+      "id": "8bf07ed4-b11b-45b7-bf1a-72199d2f7523",
+      "createdAt": "2026-05-04T22:25:23.519Z",
+      "solvedCount": 1,
+      "fen": "r2qk2r/pbp3p1/1p1p1n1p/n1b1p1BQ/4P3/1BPP4/PP3P1P/RN2K1NR b KQkq - 1 11",
+      "baseFen": "r2qk2r/pbp3pp/1p1p1n2/n1b1p3/4P3/1BPP1Q2/PP3P1P/RNB1K1NR w KQkq - 0 10",
+      "contextMoves": [
+        "c1g5",
+        "h7h6"
+      ],
+      "originalContinuation": [
+        "f6h5"
+      ],
+      "preBlunderFen": "r2qk2r/pbp3p1/1p1p1n1p/n1b1p1B1/4P3/1BPP1Q2/PP3P1P/RN2K1NR w KQkq - 0 11",
+      "solutionSequence": [
+        "f6h5",
+        "g5d8",
+        "e8d8",
+        "b3c2",
+        "h8f8"
+      ],
+      "playedMove": "f3h5",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.502,
+      "preBlunderWp": 0.6381,
+      "solutionMoveCount": 5,
+      "playerColor": "black",
+      "gameId": "168237041428",
+      "ply": 20
+    },
+    {
+      "id": "ae97591b-cb9a-42bc-a0b8-40262edf5759",
+      "createdAt": "2026-05-04T22:25:24.784Z",
+      "solvedCount": 0,
+      "fen": "r2qk1nr/pbp3pp/1p1p1P2/n1b1p3/4P3/1BPP1Q2/PP3P1P/RNB1K1NR b KQkq - 0 9",
+      "baseFen": "r2qk1nr/pbpp2pp/1p3p2/n1b1p3/4P1P1/1BPP1Q2/PP3P1P/RNB1K1NR w KQkq - 3 8",
+      "contextMoves": [
+        "g4g5",
+        "d7d6"
+      ],
+      "originalContinuation": [
+        "g8f6",
+        "c1g5",
+        "h7h6"
+      ],
+      "preBlunderFen": "r2qk1nr/pbp3pp/1p1p1p2/n1b1p1P1/4P3/1BPP1Q2/PP3P1P/RNB1K1NR w KQkq - 0 9",
+      "solutionSequence": [
+        "g8f6",
+        "b3a4",
+        "b6b5"
+      ],
+      "playedMove": "g5f6",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.2633,
+      "preBlunderWp": 0.6705,
+      "solutionMoveCount": 3,
+      "playerColor": "black",
+      "gameId": "168237041428",
+      "ply": 16
+    },
+    {
+      "id": "79e5bb28-a7eb-4111-bded-36c1a651a3f7",
+      "createdAt": "2026-05-04T22:25:25.655Z",
+      "solvedCount": 0,
+      "fen": "r2qk1nr/pbpp2pp/1p3p2/n1b1p1P1/4P3/1BPP1Q2/PP3P1P/RNB1K1NR b KQkq - 0 8",
+      "baseFen": "r2qkbnr/pbpp2pp/1p3p2/n3p3/2B1P1P1/2PP1Q2/PP3P1P/RNB1K1NR w KQkq - 1 7",
+      "contextMoves": [
+        "c4b3",
+        "f8c5"
+      ],
+      "originalContinuation": [
+        "d7d6",
+        "g5f6",
+        "g8f6"
+      ],
+      "preBlunderFen": "r2qk1nr/pbpp2pp/1p3p2/n1b1p3/4P1P1/1BPP1Q2/PP3P1P/RNB1K1NR w KQkq - 3 8",
+      "solutionSequence": [
+        "a5b3",
+        "a2b3",
+        "d7d5"
+      ],
+      "playedMove": "g4g5",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.2835,
+      "preBlunderWp": 0.6261,
+      "solutionMoveCount": 3,
+      "playerColor": "black",
+      "gameId": "168237041428",
+      "ply": 14
+    },
+    {
+      "id": "c76216cb-cbbb-4738-91d0-f3bb09ecd2dc",
+      "createdAt": "2026-05-04T22:25:25.659Z",
+      "solvedCount": 0,
+      "fen": "r2qk2r/pbp3p1/1p1p1n1p/n1b1p1B1/4P3/1BPP1Q2/PP3P1P/RN2K1NR w KQkq - 0 11",
+      "baseFen": "r2qk1nr/pbp3pp/1p1p1P2/n1b1p3/4P3/1BPP1Q2/PP3P1P/RNB1K1NR b KQkq - 0 9",
+      "contextMoves": [
+        "g8f6",
+        "c1g5"
+      ],
+      "originalContinuation": [
+        "f3h5",
+        "f6h5"
+      ],
+      "preBlunderFen": "r2qk2r/pbp3pp/1p1p1n2/n1b1p1B1/4P3/1BPP1Q2/PP3P1P/RN2K1NR b KQkq - 1 10",
+      "solutionSequence": [
+        "g5f6",
+        "d8f6",
+        "f3f6",
+        "g7f6",
+        "b3d5"
+      ],
+      "playedMove": "h7h6",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.3023,
+      "preBlunderWp": 0.3526,
+      "solutionMoveCount": 5,
+      "playerColor": "white",
+      "gameId": "168237041428",
+      "ply": 19
+    },
+    {
+      "id": "12dc1e15-0ef3-42c2-a1cb-f03fee183a4e",
+      "createdAt": "2026-05-04T22:25:25.828Z",
+      "solvedCount": 0,
+      "fen": "r2qk1nr/pbpp2pp/1p3p2/n1b1p3/4P1P1/1BPP1Q2/PP3P1P/RNB1K1NR w KQkq - 3 8",
+      "baseFen": "r2qkbnr/pbpp2pp/1pn2p2/4p3/2B1P1P1/2PP1Q2/PP3P1P/RNB1K1NR b KQkq - 0 6",
+      "contextMoves": [
+        "c6a5",
+        "c4b3"
+      ],
+      "originalContinuation": [
+        "g4g5",
+        "d7d6",
+        "g5f6"
+      ],
+      "preBlunderFen": "r2qkbnr/pbpp2pp/1p3p2/n3p3/4P1P1/1BPP1Q2/PP3P1P/RNB1K1NR b KQkq - 2 7",
+      "solutionSequence": [
+        "b3g8",
+        "h8g8",
+        "b2b4"
+      ],
+      "playedMove": "f8c5",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.2875,
+      "preBlunderWp": 0.3368,
+      "solutionMoveCount": 3,
+      "playerColor": "white",
+      "gameId": "168237041428",
+      "ply": 13
+    },
+    {
+      "id": "478fecbf-e2a0-4bb1-9b91-0a6410d594a4",
+      "createdAt": "2026-05-04T22:25:27.814Z",
+      "solvedCount": 0,
+      "fen": "4rrk1/p2Q3p/1p4q1/2p5/P1P1b3/7N/5PP1/R3R1K1 b - - 0 25",
+      "baseFen": "4rrk1/pb1p3p/1p4q1/2p5/P1n1P3/3P3N/3Q1PP1/R3R1K1 w - - 0 24",
+      "contextMoves": [
+        "d3c4",
+        "b7e4"
+      ],
+      "originalContinuation": [
+        "g6g2"
+      ],
+      "preBlunderFen": "4rrk1/p2p3p/1p4q1/2p5/P1P1b3/7N/3Q1PP1/R3R1K1 w - - 0 25",
+      "solutionSequence": [
+        "g6g2"
+      ],
+      "playedMove": "d2d7",
+      "label": "Error grave",
+      "puzzleType": "mate",
+      "mateIn": 1,
+      "wpLoss": 0.4514,
+      "preBlunderWp": 0.4514,
+      "solutionMoveCount": 1,
+      "playerColor": "black",
+      "gameId": "168236805086",
+      "ply": 48
+    },
+    {
+      "id": "97407f6a-c968-42bc-919a-1020b37f6bc0",
+      "createdAt": "2026-05-04T22:25:28.678Z",
+      "solvedCount": 0,
+      "fen": "r4rk1/pb1p3p/1p4q1/2p1B1N1/2P1P1n1/P2P4/3Q1PP1/R3R1K1 b - - 0 21",
+      "baseFen": "r4rk1/pb1p3p/1p4qn/2p1p1N1/2P1P3/P2P2B1/5PP1/R2QR1K1 w - - 1 20",
+      "contextMoves": [
+        "d1d2",
+        "h6g4"
+      ],
+      "originalContinuation": [
+        "g4e5",
+        "g5h3",
+        "a8e8",
+        "a3a4",
+        "e5c4",
+        "d3c4",
+        "b7e4"
+      ],
+      "preBlunderFen": "r4rk1/pb1p3p/1p4q1/2p1p1N1/2P1P1n1/P2P2B1/3Q1PP1/R3R1K1 w - - 3 21",
+      "solutionSequence": [
+        "f8f2",
+        "d2c1",
+        "g4e5",
+        "e1e3",
+        "g6g5",
+        "g1f2",
+        "e5g4"
+      ],
+      "playedMove": "g3e5",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.529,
+      "preBlunderWp": 0.6882,
       "solutionMoveCount": 7,
       "playerColor": "black",
-      "gameId": "168147711784",
-      "ply": 42
+      "gameId": "168236805086",
+      "ply": 40
+    },
+    {
+      "id": "91f58c19-22f2-4282-b7f3-1e489b4c4f79",
+      "createdAt": "2026-05-04T22:25:29.360Z",
+      "solvedCount": 0,
+      "fen": "rq3rk1/pb1p3p/1pnPpp1n/2p3p1/2P1P3/3B1NB1/P1P2PPP/R2Q1RK1 w - - 3 14",
+      "baseFen": "rn1q1rk1/pb1p3p/1p1Ppp1n/2p3p1/2P1P3/3B1NB1/P1P2PPP/R2QK2R b KQ - 0 12",
+      "contextMoves": [
+        "b8c6",
+        "e1g1"
+      ],
+      "originalContinuation": [
+        "f1e1",
+        "c6b4",
+        "a2a3"
+      ],
+      "preBlunderFen": "r2q1rk1/pb1p3p/1pnPpp1n/2p3p1/2P1P3/3B1NB1/P1P2PPP/R2Q1RK1 b - - 2 13",
+      "solutionSequence": [
+        "f3g5",
+        "b8e8",
+        "g5h3"
+      ],
+      "playedMove": "d8b8",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.1921,
+      "preBlunderWp": 0.4477,
+      "solutionMoveCount": 3,
+      "playerColor": "white",
+      "gameId": "168236805086",
+      "ply": 25
+    },
+    {
+      "id": "409d57f8-a45d-48dd-bc52-ff5493451b5a",
+      "createdAt": "2026-05-04T22:25:33.627Z",
+      "solvedCount": 0,
+      "fen": "r1b3nr/ppNk1ppp/3p4/2b1q3/2BnP3/4B3/PPP2PPP/R2QK2R w KQ - 1 10",
+      "baseFen": "r1b1k1nr/ppp2ppp/3p1q2/2bN4/2BnP3/4B3/PPP2PPP/R2QK2R b KQkq - 3 8",
+      "contextMoves": [
+        "f6e5",
+        "d5c7"
+      ],
+      "originalContinuation": [
+        "c7a8",
+        "e5e4",
+        "e1g1"
+      ],
+      "preBlunderFen": "r1b1k1nr/ppN2ppp/3p4/2b1q3/2BnP3/4B3/PPP2PPP/R2QK2R b KQkq - 0 9",
+      "solutionSequence": [
+        "c7a8",
+        "b7b5",
+        "c2c3"
+      ],
+      "playedMove": "e8d7",
+      "label": "Error",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.1913,
+      "preBlunderWp": 0.5,
+      "solutionMoveCount": 3,
+      "playerColor": "white",
+      "gameId": "168234552760",
+      "ply": 17
+    },
+    {
+      "id": "893803d5-8f0b-49ca-948e-59c727e9885e",
+      "createdAt": "2026-05-04T22:25:34.227Z",
+      "solvedCount": 0,
+      "fen": "r1bqk1nr/ppp2ppp/2np4/2b5/2BNP3/2N5/PPP2PPP/R1BQK2R b KQkq - 0 6",
+      "baseFen": "r1bqk1nr/ppp2ppp/2np4/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5",
+      "contextMoves": [
+        "d2d4",
+        "e5d4"
+      ],
+      "originalContinuation": [
+        "c6d4",
+        "c1e3",
+        "d8f6"
+      ],
+      "preBlunderFen": "r1bqk1nr/ppp2ppp/2np4/2b5/2BpP3/2N2N2/PPP2PPP/R1BQK2R w KQkq - 0 6",
+      "solutionSequence": [
+        "c5d4",
+        "c3d5",
+        "a7a6"
+      ],
+      "playedMove": "f3d4",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.213,
+      "preBlunderWp": 0.4341,
+      "solutionMoveCount": 3,
+      "playerColor": "black",
+      "gameId": "168234552760",
+      "ply": 10
     }
   ]
 }
