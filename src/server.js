@@ -133,7 +133,7 @@ wss.on('connection', (ws) => {
             case 'get_stats': {
                 GameStore.getStats().then(stats => {
                     if (!stats) {
-                        send({ type: 'stats_data', stats: { games: [], summary: { totalAnalyses: 0, avgAccuracyWhite: 0, avgAccuracyBlack: 0 }, accuracyByPhase: [], tacticalBreakdown: [] } });
+                        send({ type: 'stats_data', stats: { games: [], summary: { totalAnalyses: 0, avgAccuracyWhite: 0, avgAccuracyBlack: 0 }, accuracyByPhase: [], moveQuality: [] } });
                     } else {
                         send({ type: 'stats_data', stats });
                     }

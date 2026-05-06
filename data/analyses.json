@@ -1,69 +1,62 @@
 {
   "analyses": [
     {
-      "id": "220d0e7c-dc87-44d1-96c4-90c7f90012fd",
-      "createdAt": "2026-05-06T16:42:03.187Z",
-      "gameId": "168323627836",
-      "white": {
-        "accuracy": 63
-      },
-      "black": {
-        "accuracy": 41
-      },
-      "opening": "Hungarian Opening: Reversed Norwegian Defense",
-      "moveCount": 30,
-      "date": "2026-05-06T16:42:02.977Z",
-      "color": "black",
-      "win": true
-    },
-    {
-      "id": "83a9d29a-bf4c-47cd-86c2-afbf15d5177d",
-      "createdAt": "2026-05-06T16:42:42.747Z",
-      "gameId": "168318017876",
-      "white": {
-        "accuracy": 42
-      },
-      "black": {
-        "accuracy": 61
-      },
-      "opening": "Ruy Lopez: Steinitz Defense",
-      "moveCount": 44,
-      "date": "2026-05-06T16:42:42.744Z",
-      "color": "white",
-      "win": true
-    },
-    {
-      "id": "57fccaf9-cc73-4e20-8c20-cd8da00f5bf4",
-      "createdAt": "2026-05-06T19:49:54.528Z",
+      "id": "a34d16ad-d937-4a57-867e-bf5701943693",
+      "createdAt": "2026-05-06T21:07:23.073Z",
       "gameId": "168326072068",
       "white": {
         "accuracy": 86
       },
       "black": {
-        "accuracy": 75
+        "accuracy": 73
       },
       "opening": "Ruy Lopez: Classical Variation",
       "moveCount": 63,
-      "date": "2026-05-06T19:49:54.527Z",
+      "date": "2026-05-06T21:07:23.072Z",
       "color": "white",
-      "win": true
+      "win": true,
+      "timeControl": "5m",
+      "accuracyByPhase": [
+        {
+          "phase": "Apertura",
+          "accuracy": 95,
+          "color": "#4caf50"
+        },
+        {
+          "phase": "Medio Juego",
+          "accuracy": 96,
+          "color": "#ff9800"
+        },
+        {
+          "phase": "Final",
+          "accuracy": 99,
+          "color": "#2196f3"
+        }
+      ],
+      "labelCounts": {
+        "Imprecisión": 3,
+        "Mejor": 17,
+        "Error grave": 3,
+        "Excelente": 25,
+        "Bueno": 8
+      }
     },
     {
-      "id": "c33f7fa2-8d5e-472b-acc1-9fe7215669aa",
-      "createdAt": "2026-05-06T20:39:29.399Z",
+      "id": "86238004-059b-4543-b504-0de25fb1c63f",
+      "createdAt": "2026-05-06T21:07:36.244Z",
       "gameId": "168325801206",
       "white": {
-        "accuracy": 86
+        "accuracy": 84
       },
       "black": {
         "accuracy": 75
       },
       "opening": "Ruy Lopez: Nürnberg Variation",
       "moveCount": 57,
-      "date": "2026-05-06T20:39:29.399Z",
+      "date": "2026-05-06T21:07:36.243Z",
       "color": "white",
       "win": true,
-      "timeControl": null,
+      "timeControl": "5m",
       "accuracyByPhase": [
         {
           "phase": "Apertura",
@@ -78,10 +71,46 @@
       ],
       "labelCounts": {
         "Error": 4,
-        "Mejor": 18,
-        "Bueno": 4,
-        "Excelente": 18,
-        "Imprecisión": 7
+        "Mejor": 20,
+        "Bueno": 5,
+        "Excelente": 14,
+        "Imprecisión": 8
+      }
+    },
+    {
+      "id": "2a87fdc5-5604-4a6e-8cca-cf37c723012e",
+      "createdAt": "2026-05-06T21:07:50.564Z",
+      "gameId": "168323627836",
+      "white": {
+        "accuracy": 77
+      },
+      "black": {
+        "accuracy": 50
+      },
+      "opening": "Hungarian Opening: Reversed Norwegian Defense",
+      "moveCount": 30,
+      "date": "2026-05-06T21:07:50.563Z",
+      "color": "black",
+      "win": true,
+      "timeControl": "5m",
+      "accuracyByPhase": [
+        {
+          "phase": "Apertura",
+          "accuracy": 95,
+          "color": "#4caf50"
+        },
+        {
+          "phase": "Medio Juego",
+          "accuracy": 96,
+          "color": "#ff9800"
+        }
+      ],
+      "labelCounts": {
+        "Imprecisión": 4,
+        "Mejor": 11,
+        "Excelente": 7,
+        "Error": 3,
+        "Error grave": 1
       }
     }
   ]

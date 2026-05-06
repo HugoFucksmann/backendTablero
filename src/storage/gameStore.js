@@ -65,18 +65,25 @@ function _aggregatePhases(games) {
 }
 
 /**
- * Agrega los conteos de etiquetas de múltiples partidas.
- * Calcula un severity score normalizado por el total de jugadas no-libro.
- * Devuelve los motivos de error ordenados por frecuencia.
- *
- * Mapeamos las etiquetas del clasificador a motivos legibles de alto nivel:
- *   - 'Error grave' + 'Error' → errores tácticos generales
- *   - 'Imprecisión' → inaccuracies
+ * Distribución porcentual de calidad de jugadas entre múltiples partidas.
+ * Métrica: porcentaje de jugadas de cada tipo sobre el total de jugadas no-libro.
+ * Es scale-invariant: válido con cualquier cantidad de partidas.
  *
  * @param {Array} games
- * @returns {Array<{motive, severity, count}>}
+ * @returns {Array<{label, pct, count, color}>} - ordenado de mejor a peor calidad
  */
-function _aggregateTacticalBreakdown(games) {
+function _aggregateMoveQuality(games) {
+    const ALL_LABELS = ['Brillante', 'Mejor', 'Excelente', 'Bueno', 'Imprecisión', 'Error', 'Error grave'];
+    const LABEL_COLORS = {
+        'Brillante':   '#7c4dff',
+        'Mejor':       '#4caf50',
+        'Excelente':   '#8bc34a',
+        'Bueno':       '#cddc39',
+        'Imprecisión': '#ff9800',
+        'Error':       '#f44336',
+        'Error grave': '#b71c1c',
+    };
+
     const totalByLabel = {};
     let totalNonBook = 0;
 
@@ -90,22 +97,14 @@ function _aggregateTacticalBreakdown(games) {
 
     if (totalNonBook === 0) return [];
 
-    // Solo mostrar categorías negativas con un mapeo a nombre amigable
-    const LABEL_MAP = {
-        'Error grave': 'Errores Graves',
-        'Error':       'Errores',
-        'Imprecisión': 'Imprecisiones',
-    };
-
-    return Object.entries(LABEL_MAP)
-        .filter(([key]) => totalByLabel[key] > 0)
-        .map(([key, motive]) => ({
-            motive,
-            count: totalByLabel[key],
-            // severity: porcentaje relativo al total de jugadas no-libro (0-100)
-            severity: Math.round((totalByLabel[key] / totalNonBook) * 100),
-        }))
-        .sort((a, b) => b.severity - a.severity);
+    return ALL_LABELS
+        .filter(label => totalByLabel[label] > 0)
+        .map(label => ({
+            label,
+            count: totalByLabel[label],
+            pct: Math.round((totalByLabel[label] / totalNonBook) * 100),
+            color: LABEL_COLORS[label],
+        }));
 }
 
 // ─── GameStore ────────────────────────────────────────────────────────────────
@@ -178,7 +177,7 @@ const GameStore = {
 
         // Agregaciones cross-game: fase y táctica
         const accuracyByPhase = _aggregatePhases(lastGames);
-        const tacticalBreakdown = _aggregateTacticalBreakdown(lastGames);
+        const moveQuality = _aggregateMoveQuality(lastGames);
 
         return {
             games: lastGames,
@@ -189,7 +188,7 @@ const GameStore = {
                 avgAccuracyBlack: Math.round(avgBlack),
             },
             accuracyByPhase,
-            tacticalBreakdown,
+            moveQuality,
         };
     },
 

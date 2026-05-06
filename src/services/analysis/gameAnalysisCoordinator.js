@@ -5,7 +5,7 @@ const { EvaluationEngine } = require('./evaluationRules');
 const { OpeningService } = require('../openings/openingService');
 const { buildPositions, buildAnalysisOrder, mapLines } = require('../../utils/analysisUtils');
 const { MoveClassifier } = require('./moveClassifier');
-const { PhaseDetector } = require('./phaseDetector');
+const { PhaseDetector } = require('../../utils/phaseDetector');
 const { StockfishProcess } = require('../../core/stockfishProcess');
 const { GameStore } = require('../../storage/gameStore');
 
@@ -181,11 +181,18 @@ class GameAnalysisCoordinator {
                     const fullData = {
                         accuracy,
                         opening: { name: detectedOpening },
+                        history: history.map(m => m.san || m),
+                        positions,
                         evaluations: evalResults,
                         moveEvaluations: Object.fromEntries(
                             Array.from(completedSet)
                                 .filter(idx => finalMoveData[idx]?.label)
                                 .map(idx => [idx, finalMoveData[idx].label])
+                        ),
+                        movePhases: Object.fromEntries(
+                            Array.from(completedSet)
+                                .filter(idx => finalMoveData[idx]?.phase)
+                                .map(idx => [idx, finalMoveData[idx].phase])
                         ),
                         bestMoves: Object.fromEntries(
                             Array.from(completedSet)
@@ -237,21 +244,20 @@ class GameAnalysisCoordinator {
         if (result) {
             const { label, isBook, wpLoss, isWhiteMove } = result;
             onMoveResult?.({ index: ply, label, isBook });
-            finalMoveData[ply] = { label, isWhiteMove, wpLoss, isBook };
-            completedSet.add(ply);
-
-            // Acumular por fase usando la FEN de la posición antes de la jugada
-            if (!isBook) {
+            
+            let phase = 'Medio Juego';
+            if (isBook) {
+                phase = 'Apertura';
+            } else {
                 const fen = positions[ply];
-                const phase = PhaseDetector.detect(ply, fen, false);
+                phase = PhaseDetector.detect(ply, fen, false);
                 phaseData[phase].wpLossSum += wpLoss;
                 phaseData[phase].count++;
-            }
-
-            // Acumular conteo de etiquetas (solo jugadas propias, no libro)
-            if (!isBook) {
                 labelCounts[label] = (labelCounts[label] ?? 0) + 1;
             }
+
+            finalMoveData[ply] = { label, isWhiteMove, wpLoss, isBook, phase };
+            completedSet.add(ply);
         }
     }
 }
