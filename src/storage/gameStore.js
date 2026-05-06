@@ -75,17 +75,23 @@ const GameStore = {
         const { analyses } = _load();
         if (analyses.length === 0) return null;
 
-        // Transform for frontend compatibility (flattening accuracy and providing defaults)
-        const formattedGames = analyses.map(g => ({
-            ...g,
-            accuracy: g.white?.accuracy ?? 0,
-            color: g.color ?? 'white',
-            win: g.win ?? true,
-            timeControl: g.timeControl ?? '10m'
-        }));
+        const formattedGames = analyses.map(g => {
+            const color = g.color ?? 'white';
+            const myAccuracy = color === 'white'
+                ? (g.white?.accuracy ?? 0)
+                : (g.black?.accuracy ?? 0);
+            return {
+                ...g,
+                accuracy: myAccuracy,   // accuracy del usuario (para la gráfica de tendencia)
+                color,
+                win: g.win ?? true,
+                timeControl: g.timeControl ?? '10m'
+            };
+        });
 
         const lastGames = formattedGames.slice(-20).reverse();
-        
+
+        const avgMyAccuracy = lastGames.reduce((acc, g) => acc + (g.accuracy || 0), 0) / lastGames.length;
         const avgWhite = lastGames.reduce((acc, g) => acc + (g.white?.accuracy || 0), 0) / lastGames.length;
         const avgBlack = lastGames.reduce((acc, g) => acc + (g.black?.accuracy || 0), 0) / lastGames.length;
 
@@ -93,6 +99,7 @@ const GameStore = {
             games: lastGames,
             summary: {
                 totalAnalyses: analyses.length,
+                avgMyAccuracy: Math.round(avgMyAccuracy),
                 avgAccuracyWhite: Math.round(avgWhite),
                 avgAccuracyBlack: Math.round(avgBlack),
             }
