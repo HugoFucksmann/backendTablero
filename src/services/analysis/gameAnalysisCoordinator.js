@@ -6,12 +6,13 @@ const { OpeningService } = require('../openings/openingService');
 const { buildPositions, buildAnalysisOrder, mapLines } = require('../../utils/analysisUtils');
 const { MoveClassifier } = require('./moveClassifier');
 const { StockfishProcess } = require('../../core/stockfishProcess');
+const { GameStore } = require('../../storage/gameStore');
 
 class GameAnalysisCoordinator {
     constructor() {
     }
 
-    async run(history, currentIndex, gameId, engineConfig = {}, callbacks = {}) {
+    async run(history, currentIndex, gameId, engineConfig = {}, callbacks = {}, extraInfo = {}) {
         const {
             onStatus, onProgress, onMoveResult, onOpeningDetected, onComplete, onError, signal, startFen
         } = callbacks;
@@ -19,6 +20,7 @@ class GameAnalysisCoordinator {
         const depth = engineConfig.depth ?? 18;
         const multiPv = engineConfig.multiPv ?? 1;
         const t0 = Date.now();
+        let detectedOpening = 'Unknown';
 
         const hash = engineConfig.hash ?? 128;
         const threads = engineConfig.threads ?? 1;
@@ -74,7 +76,10 @@ class GameAnalysisCoordinator {
                     bookStatus[ply] = isBook;
                     this._tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult);
                 },
-                onOpeningDetected,
+                onOpeningDetected: (data) => {
+                    if (data?.openingName) detectedOpening = data.openingName;
+                    onOpeningDetected?.(data);
+                },
             });
 
             openingPromise
@@ -148,6 +153,46 @@ class GameAnalysisCoordinator {
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                 console.log(`[Game] Analysis completed in ${elapsed}s | Accuracy: W:${accuracy.white}% B:${accuracy.black}%`);
 
+                // Persistencia automática
+                try {
+                    const fullData = {
+                        accuracy,
+                        opening: { name: detectedOpening },
+                        evaluations: evalResults,
+                        // completedSet contains ply indices (0-indexed move indices)
+                        moveEvaluations: Object.fromEntries(
+                            Array.from(completedSet)
+                                .filter(idx => finalMoveData[idx]?.label)
+                                .map(idx => [idx, finalMoveData[idx].label])
+                        ),
+                        // bestMoves are stored per move index (same as moveEvaluations)
+                        // evalResults[posIdx] has bestMove, where posIdx = moveIdx + 1
+                        bestMoves: Object.fromEntries(
+                            Array.from(completedSet)
+                                .filter(idx => evalResults[idx + 1]?.bestMove)
+                                .map(idx => [idx, evalResults[idx + 1].bestMove])
+                        ),
+                        alternativeLines: Object.fromEntries(
+                            Array.from(completedSet)
+                                .filter(idx => evalResults[idx + 1]?.lines)
+                                .map(idx => [idx, evalResults[idx + 1].lines])
+                        )
+                    };
+
+                    GameStore.save({
+                        gameId,
+                        white: { accuracy: accuracy.white },
+                        black: { accuracy: accuracy.black },
+                        opening: detectedOpening,
+                        moveCount: totalMoves,
+                        date: new Date().toISOString(),
+                        color: extraInfo.playerColor || 'white',
+                        win: extraInfo.win ?? true
+                    }, fullData);
+                } catch (e) {
+                    console.error('[Game] Failed to save analysis:', e.message);
+                }
+
                 onComplete?.(accuracy);
                 onProgress?.(100, 'Analysis completed');
             }
@@ -169,7 +214,7 @@ class GameAnalysisCoordinator {
         if (result) {
             const { label, isBook, wpLoss, isWhiteMove } = result;
             onMoveResult?.({ index: ply, label, isBook });
-            finalMoveData[ply] = { isWhiteMove, wpLoss, isBook };
+            finalMoveData[ply] = { label, isWhiteMove, wpLoss, isBook };
             completedSet.add(ply);
         }
     }

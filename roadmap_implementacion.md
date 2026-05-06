@@ -11,24 +11,6 @@ Antes de iniciar las capas, implementaremos el motor de guardado para que ningú
 *   **Destino**: `data/analyses.json`
 *   **Funcionalidad**: Guardar el resultado final de cada `analyze_game` incluyendo precisión, conteo de etiquetas (errores, brillantes, etc.) y metadatos de la partida (fecha, apertura).
 
----
-
-## 🟢 Etapa 1: Refactorización del Clasificador y Nuevas Etiquetas
-*Objetivo: Limpiar la lógica de detección y añadir categorías de "oportunidad" y "excelencia".*
-
-### 1.1 — Etiqueta "Omisión" (Miss)
-*   **Lógica**: Se activa cuando la ventaja previa era decisiva (WP ≥ 0.85 o CP ≥ +300) y el movimiento jugado baja drásticamente la evaluación, ignorando una secuencia forzada de ganancia (detectada vía PV).
-*   **Cambio**: El `MoveClassifier` ahora recibirá la `pv` del motor para validar si el castigo era una secuencia táctica clara.
-
-### 1.2 — Etiqueta "Gran jugada" (Great Find)
-*   **Lógica**: En posiciones difíciles (WP < 0.35), es el único movimiento que mantiene la evaluación mientras todos los demás pierden.
-*   **Requisito**: Requiere configurar el análisis con `multiPv: 3` para confirmar que las alternativas son significativamente peores.
-
-### 1.3 — Etiqueta "Brillante" (Estricta)
-*   **Lógica**: Debe ser el mejor movimiento, único en su rango, e involucrar un sacrificio de material (detectado mediante comparación de piezas antes/después y evaluando si la pieza entregada mejora el WP).
-
----
-
 ## 🟡 Etapa 2: Umbrales Dinámicos y Detección de Fase
 *Objetivo: Ajustar la sensibilidad del motor según el contexto de la partida.*
 

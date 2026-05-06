@@ -11,6 +11,8 @@ const { PuzzleStore } = require('./storage/puzzleStore');
 const { OpeningBook } = require('./services/openings/openingBook');
 const { OpeningService } = require('./services/openings/openingService');
 
+const { GameStore } = require('./storage/gameStore');
+
 // Inicializar el libro de aperturas al arranque
 OpeningBook.load();
 
@@ -53,7 +55,7 @@ wss.on('connection', (ws) => {
             }
 
             case 'analyze_game': {
-                const { history, currentIndex, gameId, engineConfig, startFen } = msg;
+                const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win } = msg;
                 queue.analyzeGame(history, currentIndex, gameId, engineConfig, {
                     onStatus: (running) => send({ type: 'status', running }),
                     onProgress: (pct, label) => send({ type: 'progress', pct, label }),
@@ -65,7 +67,7 @@ wss.on('connection', (ws) => {
                     onComplete: (acc) => send({ type: 'complete', accuracy: acc }),
                     onCancelled: () => send({ type: 'cancelled' }),
                     onError: (err) => send({ type: 'error', message: err.message }),
-                }, startFen).catch((err) => {
+                }, startFen, { playerColor, win }).catch((err) => {
                     if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
                 });
                 break;
@@ -129,31 +131,35 @@ wss.on('connection', (ws) => {
             }
 
             case 'get_stats': {
-                // Mock data for user statistics (Etapa 5 del roadmap)
-                const mockStats = {
-                    games: [
-                        { date: new Date(Date.now() - 86400000 * 5).toISOString(), timeControl: '10m', accuracy: 82, win: true, color: 'white', opening: 'Ruy Lopez' },
-                        { date: new Date(Date.now() - 86400000 * 4).toISOString(), timeControl: '5m', accuracy: 75, win: false, color: 'black', opening: 'Sicilian Defense' },
-                        { date: new Date(Date.now() - 86400000 * 3).toISOString(), timeControl: '10m', accuracy: 88, win: true, color: 'white', opening: 'Queen\'s Gambit' },
-                        { date: new Date(Date.now() - 86400000 * 2).toISOString(), timeControl: '5m', accuracy: 68, win: false, color: 'black', opening: 'Caro-Kann' },
-                        { date: new Date(Date.now() - 86400000 * 1).toISOString(), timeControl: '10m', accuracy: 91, win: true, color: 'white', opening: 'Italian Game' },
-                        { date: new Date(Date.now() - 86400000 * 0.5).toISOString(), timeControl: '5m', accuracy: 84, win: true, color: 'white', opening: 'London System' },
-                        { date: new Date(Date.now() - 86400000 * 0.2).toISOString(), timeControl: '10m', accuracy: 79, win: false, color: 'black', opening: 'French Defense' },
-                        { date: new Date().toISOString(), timeControl: '5m', accuracy: 92, win: true, color: 'white', opening: 'Sicilian Defense' },
-                    ],
-                    tacticalBreakdown: [
-                        { motive: 'Tenedor', severity: 75 },
-                        { motive: 'Clavada', severity: 40 },
-                        { motive: 'Ataque Descubierto', severity: 60 },
-                        { motive: 'Mate en 1', severity: 20 },
-                    ],
-                    accuracyByPhase: [
-                        { phase: 'Apertura', accuracy: 92, color: '#4caf50' },
-                        { phase: 'Medio Juego', accuracy: 78, color: '#ff9800' },
-                        { phase: 'Final', accuracy: 85, color: '#2196f3' },
-                    ]
-                };
-                send({ type: 'stats_data', stats: mockStats });
+                const stats = GameStore.getStats();
+                if (!stats) {
+                    send({ type: 'stats_data', stats: { games: [], summary: { totalAnalyses: 0, avgAccuracyWhite: 0, avgAccuracyBlack: 0 } } });
+                } else {
+                    send({ type: 'stats_data', stats });
+                }
+                break;
+            }
+
+            case 'get_analyses': {
+                const analyses = GameStore.getAll();
+                send({ type: 'analyses_list', analyses });
+                break;
+            }
+
+            case 'delete_analyses': {
+                const { ids } = msg;
+                GameStore.delete(ids);
+                // Refresh list
+                send({ type: 'analyses_list', analyses: GameStore.getAll() });
+                break;
+            }
+
+            case 'get_full_analysis': {
+                const { gameId } = msg;
+                const fullAnalysis = GameStore.getFull(gameId);
+                if (fullAnalysis) {
+                    send({ type: 'full_analysis_data', gameId, data: fullAnalysis });
+                }
                 break;
             }
 

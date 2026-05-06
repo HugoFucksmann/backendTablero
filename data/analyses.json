@@ -1,0 +1,36 @@
+{
+  "analyses": [
+    {
+      "id": "5af8faef-fd71-4dd6-97e0-5b004e5e3b5a",
+      "createdAt": "2026-05-06T16:30:35.670Z",
+      "gameId": "168323627836",
+      "white": {
+        "accuracy": 60
+      },
+      "black": {
+        "accuracy": 40
+      },
+      "opening": "Hungarian Opening: Reversed Norwegian Defense",
+      "moveCount": 30,
+      "date": "2026-05-06T16:30:35.670Z",
+      "color": "white",
+      "win": true
+    },
+    {
+      "id": "79274c1c-210f-454c-ab82-81dd6329d2b1",
+      "createdAt": "2026-05-06T16:30:08.017Z",
+      "gameId": "168323419930",
+      "white": {
+        "accuracy": 44
+      },
+      "black": {
+        "accuracy": 37
+      },
+      "opening": "Queen's Pawn Game",
+      "moveCount": 35,
+      "date": "2026-05-06T16:30:08.016Z",
+      "color": "white",
+      "win": true
+    }
+  ]
+}
