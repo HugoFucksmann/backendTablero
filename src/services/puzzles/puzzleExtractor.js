@@ -5,6 +5,7 @@ const { ChessMath } = require('../../utils/chessMath');
 const { EvaluationEngine } = require('../analysis/evaluationRules');
 const { buildPositions, parsePgn } = require('../../utils/analysisUtils');
 const { PuzzleStore } = require('../../storage/puzzleStore');
+const { DataMiner } = require('../analysis/dataMiner');
 const { evaluatePuzzleCandidate, isTacticalMove, allowsMate } = require('./puzzleFilters');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -215,7 +216,12 @@ class PuzzleExtractor {
                     const validation = evaluatePuzzleCandidate({ ...c, afterEval: afterHeavy, wpLoss });
                     if (!validation.accept) continue;
 
-                    this._savePuzzle(c, validation, history, positions, gameId, wpLoss);
+                    const severity = DataMiner.calculateBlunderSeverity(c.beforeEval.wp, afterHeavy.wp, c.isWhiteMove);
+                    const tension = DataMiner.calculateTension(c.preBlunderFen);
+                    const onlyMove = DataMiner.detectOnlyMove(afterHeavy.line1Score, afterHeavy.line2Score, !c.isWhiteMove);
+                    const motifs = DataMiner.extractTacticalMotifs(c.puzzleFen, validation.solutionSequence);
+
+                    this._savePuzzle(c, validation, history, positions, gameId, wpLoss, { severity, tension, onlyMove, motifs });
                     extracted++;
                 } catch (e) {
                     if (e.name !== 'AbortError') {
@@ -229,7 +235,7 @@ class PuzzleExtractor {
         return extracted;
     }
 
-    _savePuzzle(c, v, history, positions, gameId, finalWpLoss) {
+    _savePuzzle(c, v, history, positions, gameId, finalWpLoss, minedData) {
         const playerColor = c.isWhiteMove ? 'black' : 'white';
         const mapMove = (m) => typeof m === 'string' ? m : (m.lan ?? m.san);
         const startIndex = Math.max(0, c.ply - 2);
@@ -250,6 +256,13 @@ class PuzzleExtractor {
             playerColor,
             gameId,
             ply: c.ply,
+            // Enriched Data
+            blunderSeverity: minedData.severity,
+            tensionIndex: minedData.tension.tensionIndex,
+            attackedSquares: minedData.tension.attackedSquaresCount,
+            isOnlyMove: minedData.onlyMove.isOnlyMove,
+            criticalityGap: minedData.onlyMove.criticalityGap,
+            tacticalMotifs: minedData.motifs
         });
     }
 }
