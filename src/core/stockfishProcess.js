@@ -61,6 +61,11 @@ class StockfishProcess {
 
     async analyzePosition(fen, depth, signal = null, onProgress = null, multiPv = null) {
         if (!fen || typeof fen !== 'string') throw new Error('Invalid FEN');
+        // Basic UCI injection prevention: no newlines, only standard FEN characters
+        if (!/^[rnbqkpRNBQKP1-8\/\s\-wbea-h0-9]+$/.test(fen)) {
+            throw new Error('Malformed FEN string');
+        }
+
 
         if (this._engine.state === EngineState.DEAD) {
             this._initPromise = null;

@@ -77,6 +77,42 @@ const GameStore = {
             await fsp.unlink(path.join(FULL_DATA_DIR, file)).catch(() => {});
         }
     },
+
+    async runIntegrityCheck() {
+        console.log('[GameStore] Running integrity check...');
+        try {
+            const files = await fsp.readdir(FULL_DATA_DIR);
+            const fileGameIds = new Set(files.filter(f => f.endsWith('.json')).map(f => f.replace('.json', '')));
+            
+            // Note: SqliteStore.getAll without limits would be better here, but we can do it in batches or just get all for local.
+            // Let's add a helper to SqliteStore or just fetch a large number
+            const allDbEntries = SqliteStore.getAll(0, 100000); 
+            const dbGameIds = new Set(allDbEntries.map(e => e.gameId).filter(Boolean));
+
+            let deletedDbCount = 0;
+            let deletedFileCount = 0;
+
+            // Check for DB entries without a file
+            for (const entry of allDbEntries) {
+                if (entry.gameId && !fileGameIds.has(entry.gameId)) {
+                    SqliteStore.delete([entry.id]);
+                    deletedDbCount++;
+                }
+            }
+
+            // Check for files without a DB entry
+            for (const gameId of fileGameIds) {
+                if (!dbGameIds.has(gameId)) {
+                    await fsp.unlink(path.join(FULL_DATA_DIR, `${gameId}.json`)).catch(() => {});
+                    deletedFileCount++;
+                }
+            }
+
+            console.log(`[GameStore] Integrity check complete. Removed ${deletedDbCount} orphan DB entries and ${deletedFileCount} orphan files.`);
+        } catch (e) {
+            console.error('[GameStore] Integrity check failed:', e.message);
+        }
+    }
 };
 
 module.exports = { GameStore };
