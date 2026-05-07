@@ -387,6 +387,125 @@
         "Error grave": 6,
         "Imprecisión": 7
       }
+    },
+    {
+      "id": "ffa7b8c4-7c50-4a30-b8a1-ac492b1a4a15",
+      "createdAt": "2026-05-07T12:39:33.236Z",
+      "gameId": "168360527502",
+      "white": {
+        "accuracy": 59
+      },
+      "black": {
+        "accuracy": 59
+      },
+      "opening": "King's Knight Opening",
+      "moveCount": 48,
+      "date": "2026-05-07T12:39:33.179Z",
+      "color": "white",
+      "win": true,
+      "timeControl": "5m",
+      "accuracyByPhase": [
+        {
+          "phase": "Apertura",
+          "accuracy": 92,
+          "color": "#4caf50"
+        },
+        {
+          "phase": "Medio Juego",
+          "accuracy": 93,
+          "color": "#ff9800"
+        },
+        {
+          "phase": "Final",
+          "accuracy": 97,
+          "color": "#2196f3"
+        }
+      ],
+      "labelCounts": {
+        "Error": 13,
+        "Mejor": 13,
+        "Imprecisión": 11,
+        "Bueno": 7,
+        "Error grave": 1
+      }
+    },
+    {
+      "id": "36413697-570c-4741-ab32-03cc4c0dd44a",
+      "createdAt": "2026-05-07T12:49:51.156Z",
+      "gameId": "168360279998",
+      "white": {
+        "accuracy": 32
+      },
+      "black": {
+        "accuracy": 33
+      },
+      "opening": "Ruy Lopez: Steinitz Defense",
+      "moveCount": 52,
+      "date": "2026-05-07T12:49:51.147Z",
+      "color": "black",
+      "win": true,
+      "timeControl": "5m",
+      "accuracyByPhase": [
+        {
+          "phase": "Apertura",
+          "accuracy": 92,
+          "color": "#4caf50"
+        },
+        {
+          "phase": "Medio Juego",
+          "accuracy": 78,
+          "color": "#ff9800"
+        },
+        {
+          "phase": "Final",
+          "accuracy": 99,
+          "color": "#2196f3"
+        }
+      ],
+      "labelCounts": {
+        "Error": 9,
+        "Imprecisión": 2,
+        "Mejor": 9,
+        "Error grave": 12,
+        "Excelente": 12
+      }
+    },
+    {
+      "id": "9a115b7e-5ee0-4698-a885-b73064906202",
+      "createdAt": "2026-05-07T12:52:01.350Z",
+      "gameId": "168341515426",
+      "white": {
+        "accuracy": 43
+      },
+      "black": {
+        "accuracy": 49
+      },
+      "opening": "Nimzowitsch Defense: Kennedy Variation, Linksspringer Variation",
+      "moveCount": 93,
+      "date": "2026-05-07T12:52:01.327Z",
+      "color": "black",
+      "win": true,
+      "timeControl": "5m",
+      "accuracyByPhase": [
+        {
+          "phase": "Apertura",
+          "accuracy": 99,
+          "color": "#4caf50"
+        },
+        {
+          "phase": "Medio Juego",
+          "accuracy": 93,
+          "color": "#ff9800"
+        }
+      ],
+      "labelCounts": {
+        "Imprecisión": 16,
+        "Mejor": 28,
+        "Error": 9,
+        "Error grave": 8,
+        "Bueno": 12,
+        "Excelente": 11
+      }
     }
   ]
 }

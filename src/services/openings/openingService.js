@@ -35,8 +35,19 @@ const OpeningService = {
             const cachedBookPlies = cache.bookPlies instanceof Set
                 ? cache.bookPlies
                 : new Set(cache.bookPlies);
-            for (let i = 0; i < history.length; i++) onPlyResolved(i, cachedBookPlies.has(i));
-            onOpeningDetected?.({ ...cache, bookPlies: cachedBookPlies });
+            
+            // Usar una pequeña pausa para no saturar el canal de mensajes inmediatamente
+            // y permitir que el coordinador de análisis se inicialice correctamente.
+            (async () => {
+                for (let i = 0; i < history.length; i++) {
+                    if (signal?.aborted) break;
+                    onPlyResolved(i, cachedBookPlies.has(i));
+                    if (i % 10 === 0) await new Promise(r => setImmediate(r));
+                }
+                if (!signal?.aborted) {
+                    onOpeningDetected?.({ ...cache, bookPlies: cachedBookPlies });
+                }
+            })();
             return;
         }
 
@@ -61,7 +72,7 @@ const OpeningService = {
             const localEntry = OpeningBook.lookup(fenAfter);
 
             if (localEntry) {
-                finalOpeningName = localEntry.name;
+                finalOpeningName = localEntry.rootName || localEntry.name;
                 finalEcoCode = localEntry.eco;
                 bookPlies.add(ply);
                 lastTheoryPly = ply;
@@ -90,7 +101,10 @@ const OpeningService = {
 
                     const data = await res.json();
                     if (data.opening?.name) {
-                        finalOpeningName = data.opening.name;
+                        // Extraer solo la raíz del nombre (ej: "Ruy Lopez")
+                        const name = data.opening.name;
+                        const idx = name.indexOf(':');
+                        finalOpeningName = idx !== -1 ? name.slice(0, idx).trim() : name;
                         finalEcoCode = data.opening.eco ?? finalEcoCode;
                     }
 

@@ -8,6 +8,7 @@
         "start": "node src/server.js"
     },
     "dependencies": {
+        "better-sqlite3": "^12.9.0",
         "chess.js": "^1.4.0",
         "dotenv": "^17.4.2",
         "node-fetch": "^2.7.0",

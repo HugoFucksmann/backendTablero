@@ -40,7 +40,11 @@ wss.on('connection', (ws) => {
         }
 
         const send = (payload) => {
-            if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
+            if (ws.readyState === ws.OPEN) {
+                const response = { ...payload };
+                if (msg.requestId) response.requestId = msg.requestId;
+                ws.send(JSON.stringify(response));
+            }
         };
 
         switch (msg.type) {
@@ -131,9 +135,10 @@ wss.on('connection', (ws) => {
             }
 
             case 'get_stats': {
-                GameStore.getStats().then(stats => {
+                const { filters = {} } = msg;
+                GameStore.getStats(filters).then(stats => {
                     if (!stats) {
-                        send({ type: 'stats_data', stats: { games: [], summary: { totalAnalyses: 0, avgAccuracyWhite: 0, avgAccuracyBlack: 0 }, accuracyByPhase: [], moveQuality: [] } });
+                        send({ type: 'stats_data', stats: { games: [], total: 0, avgAcc: 0, accuracyByPhase: [], moveQuality: [] } });
                     } else {
                         send({ type: 'stats_data', stats });
                     }
@@ -142,8 +147,9 @@ wss.on('connection', (ws) => {
             }
 
             case 'get_analyses': {
-                GameStore.getAll().then(analyses => {
-                    send({ type: 'analyses_list', analyses });
+                const { offset = 0, limit = 50 } = msg;
+                GameStore.getAll(offset, limit).then(analyses => {
+                    send({ type: 'analyses_list', analyses, offset, limit, total: analyses.length });
                 }).catch(err => send({ type: 'error', message: err.message }));
                 break;
             }
@@ -151,9 +157,7 @@ wss.on('connection', (ws) => {
             case 'delete_analyses': {
                 const { ids } = msg;
                 GameStore.delete(ids).then(() => {
-                    return GameStore.getAll();
-                }).then(analyses => {
-                    send({ type: 'analyses_list', analyses });
+                    send({ type: 'analyses_deleted', ids });
                 }).catch(err => send({ type: 'error', message: err.message }));
                 break;
             }
