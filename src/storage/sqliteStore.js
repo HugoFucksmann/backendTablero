@@ -153,6 +153,12 @@ const SqliteStore = {
     },
 
 
+    getByGameId(gameId) {
+        const query = `SELECT * FROM analyses WHERE gameId = ?`;
+        const row = db.prepare(query).get(gameId);
+        return row ? this._mapRow(row) : null;
+    },
+
     getAll(offset = 0, limit = 50) {
         const query = `SELECT * FROM analyses ORDER BY date DESC LIMIT ? OFFSET ?`;
         const rows = db.prepare(query).all(limit, offset);
@@ -203,7 +209,15 @@ const SqliteStore = {
             params.push(limitDate);
         }
 
-        // 1. Estadísticas Generales (Mejorada la precisión para evitar 0.0)
+        const limit = (filters.count && filters.count !== 'all') ? parseInt(filters.count) : null;
+        
+        // 0. Definir el subquery base para filtrar los IDs
+        const subQuery = `SELECT id FROM analyses ${whereClause} ORDER BY date DESC ${limit ? `LIMIT ${limit}` : ''}`;
+        
+        const idListClause = `WHERE id IN (${subQuery})`;
+        const gameIdListClause = `WHERE game_id IN (${subQuery})`;
+        const subParams = params; // Usamos los mismos params que el whereClause
+
         const general = db.prepare(`
             SELECT 
                 COUNT(*) as total,
@@ -214,8 +228,8 @@ const SqliteStore = {
                     ELSE COALESCE(whiteAccuracy, blackAccuracy, 0)
                 END) as avgAcc
             FROM analyses
-            ${whereClause}
-        `).get(...params);
+            ${idListClause}
+        `).get(...subParams);
 
         if (!general || general.total === 0) return { empty: true };
 
@@ -230,10 +244,9 @@ const SqliteStore = {
                 END) as acc,
                 AVG(CASE WHEN win = 1 THEN 100.0 ELSE 0.0 END) as wr
             FROM analyses
-
-            ${whereClause}
+            ${idListClause}
             GROUP BY color
-        `).all(...params);
+        `).all(...subParams);
 
         const white = colorStats.find(c => c.color === 'white') || { count: 0, acc: 0, wr: 0 };
         const black = colorStats.find(c => c.color === 'black') || { count: 0, acc: 0, wr: 0 };
@@ -254,12 +267,11 @@ const SqliteStore = {
                     ELSE COALESCE(blackAccuracy, whiteAccuracy) 
                 END) as acc
             FROM analyses
-
-            ${whereClause}
+            ${idListClause}
             GROUP BY name
             ORDER BY count DESC
             LIMIT 10
-        `).all(...params);
+        `).all(...subParams);
 
         // 4. Tendencia
         const trendLimit = (filters.count && filters.count !== 'all') ? parseInt(filters.count) : 25;
@@ -267,10 +279,9 @@ const SqliteStore = {
             SELECT date, 
                    (CASE WHEN color = 'white' THEN whiteAccuracy ELSE blackAccuracy END) as accuracy
             FROM analyses
-            ${whereClause}
+            ${idListClause}
             ORDER BY date DESC
-            LIMIT ${trendLimit}
-        `).all(...params).reverse();
+        `).all(...subParams).reverse();
 
         // 5. Agregación de Fases
         const phaseAccuracies = db.prepare(`
@@ -278,10 +289,10 @@ const SqliteStore = {
                 phase,
                 ROUND(AVG(accuracy)) as accuracy
             FROM phase_accuracy
-            WHERE game_id IN (SELECT id FROM analyses ${whereClause})
+            ${gameIdListClause}
             GROUP BY phase
             ORDER BY CASE phase WHEN 'Apertura' THEN 1 WHEN 'Medio Juego' THEN 2 WHEN 'Final' THEN 3 END
-        `).all(...params);
+        `).all(...subParams);
 
         const PHASE_COLORS = { 'Apertura': '#4caf50', 'Medio Juego': '#ff9800', 'Final': '#2196f3' };
         const accuracyByPhase = phaseAccuracies.map(p => ({
@@ -300,9 +311,9 @@ const SqliteStore = {
                 label,
                 SUM(count) as totalCount
             FROM move_quality
-            WHERE game_id IN (SELECT id FROM analyses ${whereClause})
+            ${gameIdListClause}
             GROUP BY label
-        `).all(...params);
+        `).all(...subParams);
 
         const totalMoves = qualityStats.reduce((sum, q) => sum + q.totalCount, 0);
         const moveQuality = ['Brillante', 'Mejor', 'Excelente', 'Bueno', 'Imprecisión', 'Error', 'Error grave', 'Insta-move Blunder', 'Deep-think Blunder', 'Time Pressure Error']
@@ -324,10 +335,10 @@ const SqliteStore = {
                 label,
                 COUNT(*) as count
             FROM game_moves
-            WHERE game_id IN (SELECT id FROM analyses ${whereClause})
+            ${gameIdListClause}
             AND label IN ('Insta-move Blunder', 'Deep-think Blunder', 'Time Pressure Error')
             GROUP BY label
-        `).all(...params);
+        `).all(...subParams);
 
         const blundersByTime = [
             { label: 'Insta-move', count: timeBlunderStats.find(s => s.label === 'Insta-move Blunder')?.count || 0, color: '#f44336' },
@@ -349,12 +360,12 @@ const SqliteStore = {
                 COUNT(DISTINCT a.id) as gameCount
             FROM analyses a
             LEFT JOIN game_moves m ON a.id = m.game_id AND m.label IN ('Error grave', 'Error', 'Deep-think Blunder', 'Insta-move Blunder', 'Time Pressure Error')
-            WHERE a.id IN (SELECT id FROM analyses ${whereClause})
+            ${idListClause.replace('id IN', 'a.id IN')}
             GROUP BY name
             HAVING gameCount >= 1
             ORDER BY errorsPerGame DESC
             LIMIT 3
-        `).all(...params);
+        `).all(...subParams);
 
         return {
             total: general.total,
