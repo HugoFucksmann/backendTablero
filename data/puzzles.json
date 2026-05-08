@@ -409,6 +409,92 @@
         "capture",
         "check"
       ]
+    },
+    {
+      "id": "0346c49c-6545-4610-a97c-45b800552d97",
+      "createdAt": "2026-05-07T22:06:53.604Z",
+      "solvedCount": 0,
+      "fen": "r1bq1rk1/1p1p1ppp/2pb4/p3P3/5P2/1PN3P1/PQ1B3P/R4RK1 w - - 0 22",
+      "baseFen": "r1bq1rk1/1p1p1ppp/2p5/p2PP3/5P1b/1PN3P1/PQ1B3P/R4RK1 b - - 0 20",
+      "contextMoves": [
+        "h4e7",
+        "d5d6"
+      ],
+      "originalContinuation": [
+        "e5d6",
+        "d8f6",
+        "a1e1"
+      ],
+      "preBlunderFen": "r1bq1rk1/1p1pbppp/2pP4/p3P3/5P2/1PN3P1/PQ1B3P/R4RK1 b - - 0 21",
+      "solutionSequence": [
+        "e5d6",
+        "b7b5",
+        "d2e3"
+      ],
+      "playedMove": "e7d6",
+      "label": "Error",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.1569,
+      "preBlunderWp": 0.6381,
+      "playerColor": "white",
+      "gameId": "168372447526",
+      "ply": 41,
+      "blunderSeverity": 0.1247,
+      "tensionIndex": 1,
+      "attackedSquares": 1,
+      "isOnlyMove": false,
+      "criticalityGap": 0.2949,
+      "tacticalMotifs": [
+        "capture"
+      ]
+    },
+    {
+      "id": "252bb597-810c-4b7c-a785-3964860d4f6f",
+      "createdAt": "2026-05-07T22:06:54.076Z",
+      "solvedCount": 0,
+      "fen": "r2r2k1/4Rpp1/2pN2q1/3p3p/5P2/1PB3Pb/PQ5P/4R1K1 w - - 6 34",
+      "baseFen": "r1r3k1/1N2Rpp1/2p3q1/3p3p/5Pb1/1PB3P1/PQ5P/4R1K1 b - - 3 32",
+      "contextMoves": [
+        "g4h3",
+        "b7d6"
+      ],
+      "originalContinuation": [
+        "e7e8",
+        "d8e8",
+        "e1e8",
+        "a8e8",
+        "d6e8",
+        "g6d3",
+        "c3d2"
+      ],
+      "preBlunderFen": "r1r3k1/4Rpp1/2pN2q1/3p3p/5P2/1PB3Pb/PQ5P/4R1K1 b - - 5 33",
+      "solutionSequence": [
+        "d6f7",
+        "d8e8",
+        "e7e8",
+        "a8e8",
+        "e1e8",
+        "g8f7",
+        "b2e2"
+      ],
+      "playedMove": "c8d8",
+      "label": "Error grave",
+      "puzzleType": "tactical_blunder",
+      "mateIn": null,
+      "wpLoss": 0.2736,
+      "preBlunderWp": 0.62,
+      "playerColor": "white",
+      "gameId": "168372447526",
+      "ply": 65,
+      "blunderSeverity": 0.2445,
+      "tensionIndex": 3,
+      "attackedSquares": 3,
+      "isOnlyMove": false,
+      "criticalityGap": 0.1103,
+      "tacticalMotifs": [
+        "capture"
+      ]
     }
   ]
 }
