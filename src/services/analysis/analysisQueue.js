@@ -2,7 +2,7 @@
 
 const { StockfishProcess } = require('../../core/stockfishProcess');
 const { ChessMath } = require('../../utils/chessMath');
-const { mapLines } = require('../../utils/analysisUtils');
+const { mapLines, parsePgn } = require('../../utils/analysisUtils');
 const { GameAnalysisCoordinator } = require('./gameAnalysisCoordinator');
 
 /**
@@ -125,6 +125,71 @@ class AnalysisQueue {
                 console.log('[Game] Analysis cancelled (AbortError) — notifying client');
                 callbacks.onCancelled?.();
             }
+        } finally {
+            this.running = false;
+        }
+    }
+
+    /**
+     * Analyzes multiple games sequentially.
+     */
+    async analyzeGames(games, engineConfig = {}, callbacks = {}) {
+        const { onGameStarted, onGameProgress, onGameComplete, onBatchComplete, onCancelled, onError } = callbacks;
+        
+        this.cancel();
+        if (!Array.isArray(games) || games.length === 0) return;
+
+        this._ac = new AbortController();
+        const { signal } = this._ac;
+        this.running = true;
+
+        console.log(`[Batch] Starting batch analysis of ${games.length} games`);
+
+        try {
+            for (let i = 0; i < games.length; i++) {
+                if (signal.aborted) break;
+
+                const game = games[i];
+                const { history, gameId, pgn, startFen, playerColor, win, timeControl } = game;
+                
+                let actualHistory = history;
+                let actualStartFen = startFen;
+
+                if (!actualHistory && pgn) {
+                    const parsed = parsePgn(pgn);
+                    actualHistory = parsed.history;
+                    actualStartFen = parsed.startFen;
+                }
+
+                if (!actualHistory || actualHistory.length === 0) {
+                    console.warn(`[Batch] Game ${i} has no history/PGN, skipping.`);
+                    continue;
+                }
+
+                onGameStarted?.({ gameIndex: i, total: games.length, gameId });
+
+                this._gameCoordinator = new GameAnalysisCoordinator();
+
+                await this._gameCoordinator.run(actualHistory, 0, gameId, engineConfig, {
+                    onProgress: (pct, label) => onGameProgress?.({ gameIndex: i, pct, label }),
+                    onMoveResult: (data) => callbacks.onMoveResult?.({ gameIndex: i, ...data }),
+                    onOpeningDetected: (data) => callbacks.onOpeningDetected?.({ gameIndex: i, ...data }),
+                    onComplete: (accuracy) => onGameComplete?.({ gameIndex: i, accuracy }),
+                    signal,
+                    startFen: actualStartFen
+                }, { playerColor, win, timeControl });
+
+                if (signal.aborted) break;
+            }
+
+            if (signal.aborted) {
+                onCancelled?.();
+            } else {
+                onBatchComplete?.({ total: games.length });
+            }
+        } catch (e) {
+            if (e.name !== 'AbortError') onError?.(e);
+            else onCancelled?.();
         } finally {
             this.running = false;
         }

@@ -32,9 +32,12 @@ const GameStore = {
     },
 
     async save(analysis, fullData = null) {
+        // Check if we already have an analysis for this gameId to avoid duplicates
+        const existing = SqliteStore.getAll(0, 100000).find(a => a.gameId === analysis.gameId);
+        
         const entry = {
-            id: randomUUID(),
-            createdAt: new Date().toISOString(),
+            id: existing ? existing.id : randomUUID(),
+            createdAt: existing ? existing.createdAt : new Date().toISOString(),
             ...analysis,
         };
 

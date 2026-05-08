@@ -32,6 +32,26 @@ const handlers = {
         });
     },
 
+    'analyze_games': (msg, { queue, send }) => {
+        const { games, engineConfig = {} } = msg;
+        if (!Array.isArray(games) || games.length === 0) {
+            send({ type: 'error', message: 'No games provided for analysis' });
+            return;
+        }
+        queue.analyzeGames(games, engineConfig, {
+            onGameStarted: (data) => send({ type: 'batch_analysis_started', ...data }),
+            onGameProgress: (data) => send({ type: 'batch_analysis_progress', ...data }),
+            onGameComplete: (data) => send({ type: 'batch_analysis_game_complete', ...data }),
+            onBatchComplete: (data) => send({ type: 'batch_analysis_complete', ...data }),
+            onCancelled: () => send({ type: 'batch_analysis_cancelled' }),
+            onError: (err) => send({ type: 'error', message: err.message }),
+            // Optional: relay move-by-move results if the UI wants to show them live
+            onMoveResult: (data) => send({ type: 'batch_move_result', ...data }),
+        }).catch((err) => {
+            if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
+        });
+    },
+
     'cancel': (msg, { queue, puzzleExtractor }) => {
         queue.cancel();
         puzzleExtractor.cancel();

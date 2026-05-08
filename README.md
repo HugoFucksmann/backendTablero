@@ -1,49 +1,70 @@
 # ♟️ Chess Analysis Backend (Native)
 
-Este es el motor de análisis nativo para el **Tablero de Ajedrez Pro**. Al ejecutarse directamente en Node.js, permite utilizar la potencia total de tu CPU y almacenamiento local, superando las limitaciones de rendimiento y memoria de las versiones WebAssembly (WASM) que corren en el navegador.
+[![Node.js](https://img.shields.io/badge/Node.js-20+-68a063.svg)](https://nodejs.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-3-003b57.svg)](https://www.sqlite.org/)
+[![Stockfish](https://img.shields.io/badge/Engine-Stockfish-4b4b4b.svg)](https://stockfishchess.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Este es el motor de análisis nativo y servidor de persistencia para el **Tablero de Ajedrez Pro**. Diseñado para maximizar el rendimiento, se ejecuta directamente en el host para aprovechar la potencia total de la CPU y el almacenamiento local, superando las limitaciones de las soluciones basadas puramente en navegador.
 
 ## 🚀 Características Principales
 
-- **⚡ Rendimiento Nativo**: Utiliza Stockfish compilado para tu sistema operativo, permitiendo análisis más profundos en menos tiempo.
-- **⚡ Rendimiento Nativo**: Utiliza Stockfish compilado para tu sistema operativo, permitiendo análisis más profundos en menos tiempo.
-- **🧩 Extractor de Puzzles**: Genera automáticamente tácticas de entrenamiento a partir de tus partidas basándose en errores graves detectados por el motor.
-- **🌍 Detección de Aperturas Híbrida**: Combina un libro local ultra-rápido (TSV) con la API de Lichess para una identificación instantánea de teoría.
-- **🎯 Fuente de Verdad Única**: Toda la lógica de ajedrez (clasificación, precisión, aperturas) vive aquí. El frontend es un cliente ligero.
-- **🔄 Multi-Cliente**: Soporta múltiples conexiones simultáneas vía WebSockets.
+- **⚡ Motor Stockfish Nativo**: Ejecución directa del binario Stockfish para análisis ultra-profundos y multihilo sin las restricciones de memoria de WASM.
+- **🗄️ Persistencia Robusta**: Utiliza `better-sqlite3` para almacenar un historial completo de análisis, partidas y estadísticas de usuario con alto rendimiento.
+- **🧩 Pipeline de Puzzles**: Algoritmo avanzado que identifica errores graves (*Blunders*) en tus partidas y extrae automáticamente puzzles tácticos personalizados.
+- **🌍 Detección de Aperturas Híbrida**: Combina un libro local de aperturas (TSV) con la API de Lichess para identificación instantánea de teoría.
+- **🔄 Cola de Procesamiento**: Sistema de gestión de tareas para análisis masivos (Bulk Import) sin bloquear el servidor.
+- **🎯 Fuente de Verdad Única**: Centraliza toda la lógica de validación (Chess.js), cálculos de precisión y clasificación de jugadas.
 
-## 🛠️ Instalación y Uso
+## 🛠️ Stack Tecnológico
 
-### 1. Requisitos
-Asegúrate de tener instalado Stockfish en tu sistema:
+- **Runtime**: Node.js (CommonJS)
+- **Database**: SQLite (`better-sqlite3`)
+- **Protocolo**: WebSockets (`ws`)
+- **Chess Engine**: Stockfish (Comunicación vía UCI)
+- **Logic**: Chess.js v1.4
+
+## ⚙️ Instalación y Configuración
+
+### 1. Requisitos Previos
+Debes tener instalado Stockfish en tu sistema:
 ```bash
-sudo apt install stockfish  # Para Ubuntu/Linux Mint/Debian
+# Ubuntu/Debian
+sudo apt install stockfish
+
+# macOS
+brew install stockfish
 ```
 
-### 2. Configuración
-Clona este repositorio e instala las dependencias:
+### 2. Instalación
+Clona el repositorio e instala las dependencias:
 ```bash
 npm install
 ```
 
-### 3. Ejecución
-Inicia el servidor WebSocket:
+### 3. Variables de Entorno
+Crea un archivo `.env` en la raíz (opcional):
+```env
+PORT=9001
+STOCKFISH_PATH=stockfish
+DB_PATH=./data/chess_stats.db
+```
+
+### 4. Ejecución
 ```bash
 npm start
 ```
-El servidor escuchará por defecto en `ws://localhost:9001`.
+El servidor iniciará un WebSocket en `ws://localhost:9001`.
 
-## ⚙️ Variables de Entorno
+## 🏗️ Estructura del Proyecto
 
-Puedes configurar el comportamiento del servidor mediante variables de entorno:
+- `/src/services`: Lógica de negocio (Análisis, Puzzles, Aperturas).
+- `/src/database`: Gestión de persistencia y esquemas SQLite.
+- `/src/engine`: Orquestación del proceso Stockfish y comunicación UCI.
+- `/data`: Almacenamiento local para la base de datos y libros de aperturas.
 
-| Variable | Descripción | Defecto |
-|----------|-------------|---------|
-| `PORT` | Puerto del servidor WebSocket | `9001` |
-| `STOCKFISH_PATH` | Ruta al ejecutable de Stockfish | `stockfish` |
-
-## 🧩 Integración con el Frontend
-
-La aplicación está configurada para conectarse automáticamente a este servidor. No es necesario seleccionar ningún modo en el frontend, ya que el soporte para análisis local (WASM) ha sido eliminado para garantizar la máxima precisión y rendimiento.
+## 🤝 Integración
+Este backend está diseñado para trabajar en conjunto con el [Frontend del Tablero de Análisis](https://github.com/HugoFucksmann/tableroAnalisis). El frontend se conecta automáticamente al puerto 9001 al detectar que el motor local está disponible.
 
 ---
-Desarrollado con ❤️ para amantes del ajedrez y el código de alto rendimiento.
+Desarrollado con enfoque en rendimiento y precisión técnica por **ElColof**.
