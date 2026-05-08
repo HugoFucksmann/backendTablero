@@ -10,32 +10,44 @@ const { ChessMath } = require('./chessMath');
  */
 
 /**
- * Parses PGN string to a verbose history array and extracts start FEN.
+ * Extracts clock times from PGN comments like { [%clk 0:03:00] }
+ */
+function extractTimes(pgn) {
+    if (!pgn) return [];
+    const times = [];
+    const clkRegex = /\{ \[%clk (\d+):(\d+):(\d+)\] \}/g;
+    let match;
+    while ((match = clkRegex.exec(pgn)) !== null) {
+        const h = parseInt(match[1]);
+        const m = parseInt(match[2]);
+        const s = parseInt(match[3]);
+        times.push(h * 3600 + m * 60 + s);
+    }
+    return times;
+}
+
+/**
+ * Parses PGN string to a verbose history array and extracts start FEN and clock times.
  */
 function parsePgn(pgn) {
-    if (!pgn) return { history: [], startFen: null };
+    if (!pgn) return { history: [], startFen: null, times: [] };
     try {
         const chess = new Chess();
-        // chess.js loadPgn can be strict. We try to load it and if it fails to 
-        // produce a history, then we consider it invalid.
         chess.loadPgn(pgn);
         const history = chess.history({ verbose: true });
-        
-        // If history is empty, maybe it's just a move list? Try loading as moves
-        if (history.length === 0 && pgn.trim().length > 0) {
-            // Check if it's just a single move or list of moves without headers
-            // loadPgn should handle it, but we can try to see if there's any info
-        }
+        const times = extractTimes(pgn);
 
         return {
             history: history,
-            startFen: chess.header().FEN || null
+            startFen: chess.header().FEN || null,
+            times: times
         };
     } catch (e) {
         console.error('[Utils] PGN Parse Error:', e.message);
-        return { history: [], startFen: null };
+        return { history: [], startFen: null, times: [] };
     }
 }
+
 
 /**
  * Generates an array of FENs for each position in the game.

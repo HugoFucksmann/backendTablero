@@ -159,6 +159,7 @@ class AnalysisQueue {
                     const parsed = parsePgn(pgn);
                     actualHistory = parsed.history;
                     actualStartFen = parsed.startFen;
+                    game.times = parsed.times;
                 }
 
                 if (!actualHistory || actualHistory.length === 0) {
@@ -177,7 +178,9 @@ class AnalysisQueue {
                     onComplete: (accuracy) => onGameComplete?.({ gameIndex: i, accuracy }),
                     signal,
                     startFen: actualStartFen
-                }, { playerColor, win, timeControl });
+                }, { playerColor, win, timeControl, times: game.times, username: game.username });
+
+
 
                 if (signal.aborted) break;
             }

@@ -22,6 +22,8 @@ class GameAnalysisCoordinator {
         const multiPv = engineConfig.multiPv ?? 1;
         const t0 = Date.now();
         let detectedOpening = 'Unknown';
+        let detectedEco = '';
+        const times = extraInfo.times || [];
 
         const hash = engineConfig.hash ?? 128;
         const threads = engineConfig.threads ?? 1;
@@ -86,10 +88,11 @@ class GameAnalysisCoordinator {
                 signal,
                 onPlyResolved: (ply, isBook) => {
                     bookStatus[ply] = isBook;
-                    this._tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts);
+                    this._tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times);
                 },
                 onOpeningDetected: (data) => {
                     if (data?.openingName) detectedOpening = data.openingName;
+                    if (data?.ecoCode) detectedEco = data.ecoCode;
                     onOpeningDetected?.(data);
                 },
             });
@@ -100,7 +103,7 @@ class GameAnalysisCoordinator {
                     if (signal.aborted) return;
                     openingState.done = true;
                     for (let i = 0; i < totalMoves; i++) {
-                        this._tryClassify(i, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts);
+                        this._tryClassify(i, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times);
                     }
                 });
 
@@ -138,8 +141,8 @@ class GameAnalysisCoordinator {
                             lines: evalResult.lines,
                         });
 
-                        this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts);
-                        this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts);
+                        this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times);
+                        this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times);
 
                         const pct = Math.round((evaluatedCount / totalMoves) * 100);
                         onProgress?.(Math.min(99, pct), `Analyzing (${pct}%)`);
@@ -180,7 +183,7 @@ class GameAnalysisCoordinator {
                 try {
                     const fullData = {
                         accuracy,
-                        opening: { name: detectedOpening },
+                        opening: { name: detectedOpening, eco: detectedEco },
                         history: history.map(m => m.san || m),
                         positions,
                         evaluations: evalResults,
@@ -206,11 +209,29 @@ class GameAnalysisCoordinator {
                         )
                     };
 
+                    const movesToSave = Array.from(completedSet).map(idx => {
+                        const m = finalMoveData[idx];
+                        const historyMove = history[idx];
+                        const san = typeof historyMove === 'string' ? historyMove : historyMove.san;
+                        const evalResult = evalResults[idx + 1];
+                        return {
+                            ply: idx,
+                            san,
+                            evaluation: evalResult?.wp,
+                            label: m.label,
+                            moveTime: m.moveTime,
+                            remainingTime: m.remainingTime,
+                            fen: positions[idx]
+                        };
+                    });
+
                     await GameStore.save({
                         gameId,
+                        username: extraInfo.username || null,
                         white: { accuracy: accuracy.white },
                         black: { accuracy: accuracy.black },
                         opening: detectedOpening,
+                        eco: detectedEco,
                         moveCount: totalMoves,
                         date: new Date().toISOString(),
                         color: extraInfo.playerColor || 'white',
@@ -218,7 +239,9 @@ class GameAnalysisCoordinator {
                         timeControl: extraInfo.timeControl || null,
                         accuracyByPhase,
                         labelCounts,
+                        moves: movesToSave
                     }, fullData);
+
                 } catch (e) {
                     console.error('[Game] Failed to save analysis:', e.message);
                 }
@@ -233,12 +256,22 @@ class GameAnalysisCoordinator {
         }
     }
 
-    _tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts) {
+    _tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times) {
         if (completedSet.has(ply)) return;
+
+        let moveTime = undefined;
+        let remainingTime = undefined;
+        if (times && times.length > ply) {
+            remainingTime = times[ply];
+            if (ply >= 2 && times[ply - 2] !== undefined) {
+                moveTime = times[ply - 2] - times[ply];
+            }
+        }
 
         const result = MoveClassifier.classify({
             ply, history, positions, evalResults,
-            bookStatus, openingDone: openingState.done
+            bookStatus, openingDone: openingState.done,
+            moveTime, remainingTime
         });
 
         if (result) {
@@ -256,10 +289,11 @@ class GameAnalysisCoordinator {
                 labelCounts[label] = (labelCounts[label] ?? 0) + 1;
             }
 
-            finalMoveData[ply] = { label, isWhiteMove, wpLoss, isBook, phase };
+            finalMoveData[ply] = { label, isWhiteMove, wpLoss, isBook, phase, moveTime, remainingTime };
             completedSet.add(ply);
         }
     }
+
 }
 
 module.exports = { GameAnalysisCoordinator };
