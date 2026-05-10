@@ -45,7 +45,6 @@ const handlers = {
             onBatchComplete: (data) => send({ type: 'batch_analysis_complete', ...data }),
             onCancelled: () => send({ type: 'batch_analysis_cancelled' }),
             onError: (err) => send({ type: 'error', message: err.message }),
-            // Optional: relay move-by-move results if the UI wants to show them live
             onMoveResult: (data) => send({ type: 'batch_move_result', ...data }),
         }).catch((err) => {
             if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
@@ -133,7 +132,23 @@ const handlers = {
                 send({ type: 'full_analysis_data', gameId, data: fullAnalysis });
             }
         }).catch(err => send({ type: 'error', message: err.message }));
-    }
+    },
+
+    // BUG #7 CORREGIDO: se valida que fen exista y no esté vacío antes de
+    // pasarlo a GameStore. Sin esta guarda, GameStore.getMoveExplorer(undefined)
+    // podría lanzar un error no controlado o devolver datos incorrectos.
+    'get_move_explorer': (msg, { send }) => {
+        const { fen } = msg;
+
+        if (!fen || typeof fen !== 'string' || fen.trim() === '') {
+            send({ type: 'error', message: 'get_move_explorer: fen is required' });
+            return;
+        }
+
+        GameStore.getMoveExplorer(fen.trim())
+            .then(data => send({ type: 'move_explorer_data', fen: fen.trim(), ...data }))
+            .catch(err => send({ type: 'error', message: err.message }));
+    },
 };
 
 function handleClientMessage(msg, context) {

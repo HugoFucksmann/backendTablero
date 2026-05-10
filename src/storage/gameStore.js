@@ -55,6 +55,10 @@ const GameStore = {
         return SqliteStore.getAggregatedStats(filters);
     },
 
+    async getMoveExplorer(fen) {
+        return SqliteStore.getMoveExplorer(fen);
+    },
+
     async delete(ids) {
         if (!Array.isArray(ids)) ids = [ids];
         

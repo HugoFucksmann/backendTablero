@@ -403,6 +403,90 @@ const SqliteStore = {
         };
     },
 
+    getMoveExplorer(fen) {
+        const query = `
+            SELECT 
+                m.move_san,
+                a.color as userColor,
+                m.ply,
+                a.win,
+                m.evaluation,
+                m.label,
+                m.move_time
+            FROM game_moves m
+            JOIN analyses a ON m.game_id = a.id
+            WHERE m.fen LIKE ?
+        `;
+        const rows = db.prepare(query).all(`${fen}%`);
+        
+        const stats = {
+            whitePerspective: { user: {}, opponent: {} },
+            blackPerspective: { user: {}, opponent: {} }
+        };
+
+        for (const row of rows) {
+            const isWhiteMove = row.ply % 2 === 0;
+            const perspective = row.userColor === 'white' ? stats.whitePerspective : stats.blackPerspective;
+            const isUserMove = (row.userColor === 'white' && isWhiteMove) || (row.userColor === 'black' && !isWhiteMove);
+            
+            const target = isUserMove ? perspective.user : perspective.opponent;
+            if (!target[row.move_san]) {
+                target[row.move_san] = {
+                    san: row.move_san,
+                    count: 0,
+                    wins: 0,
+                    draws: 0,
+                    losses: 0,
+                    totalEval: 0,
+                    evalCount: 0,
+                    labels: {}
+                };
+            }
+
+            const s = target[row.move_san];
+            s.count++;
+            
+            if (row.win === 1) s.wins++;
+            else if (row.win === 0) s.losses++;
+            else s.draws++; // Assuming null or other value means draw if we handle it
+
+            if (row.evaluation != null) {
+                s.totalEval += row.evaluation;
+                s.evalCount++;
+            }
+
+            if (row.label) {
+                s.labels[row.label] = (s.labels[row.label] || 0) + 1;
+            }
+        }
+
+        // Format and sort
+        const formatSide = (sideData) => {
+            return Object.values(sideData)
+                .map(s => ({
+                    san: s.san,
+                    count: s.count,
+                    winRate: Math.round((s.wins / s.count) * 100),
+                    drawRate: Math.round((s.draws / s.count) * 100),
+                    lossRate: Math.round((s.losses / s.count) * 100),
+                    avgEval: s.evalCount > 0 ? (s.totalEval / s.evalCount).toFixed(2) : null,
+                    labels: s.labels
+                }))
+                .sort((a, b) => b.count - a.count);
+        };
+
+        return {
+            whitePerspective: {
+                userMoves: formatSide(stats.whitePerspective.user),
+                opponentMoves: formatSide(stats.whitePerspective.opponent)
+            },
+            blackPerspective: {
+                userMoves: formatSide(stats.blackPerspective.user),
+                opponentMoves: formatSide(stats.blackPerspective.opponent)
+            }
+        };
+    },
+
     count() {
         return db.prepare('SELECT COUNT(*) as total FROM analyses').get().total;
     },
