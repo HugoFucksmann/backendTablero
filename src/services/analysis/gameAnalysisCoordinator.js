@@ -235,7 +235,7 @@ class GameAnalysisCoordinator {
                         moveCount: totalMoves,
                         date: new Date().toISOString(),
                         color: extraInfo.playerColor || 'white',
-                        win: extraInfo.win ?? true,
+                        win: extraInfo.win ?? 1,
                         timeControl: extraInfo.timeControl || null,
                         accuracyByPhase,
                         labelCounts,

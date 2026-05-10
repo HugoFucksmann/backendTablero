@@ -108,7 +108,7 @@ const SqliteStore = {
                 entry.eco || null,
                 entry.moveCount,
                 entry.color,
-                entry.win ? 1 : 0,
+                entry.win, // 1: Win, 0: Draw, -1: Loss
                 entry.timeControl,
                 entry.white?.accuracy ?? null,
                 entry.black?.accuracy ?? null,
@@ -222,6 +222,7 @@ const SqliteStore = {
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN win = 1 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN win = 0 THEN 1 ELSE 0 END) as draws,
                 AVG(CASE 
                     WHEN color = 'white' AND whiteAccuracy IS NOT NULL THEN whiteAccuracy
                     WHEN color = 'black' AND blackAccuracy IS NOT NULL THEN blackAccuracy
@@ -242,7 +243,8 @@ const SqliteStore = {
                     WHEN color = 'white' THEN COALESCE(whiteAccuracy, blackAccuracy) 
                     ELSE COALESCE(blackAccuracy, whiteAccuracy) 
                 END) as acc,
-                AVG(CASE WHEN win = 1 THEN 100.0 ELSE 0.0 END) as wr
+                AVG(CASE WHEN win = 1 THEN 100.0 ELSE 0.0 END) as wr,
+                AVG(CASE WHEN win = 0 THEN 100.0 ELSE 0.0 END) as dr
             FROM analyses
             ${idListClause}
             GROUP BY color
@@ -370,6 +372,7 @@ const SqliteStore = {
         return {
             total: general.total,
             winRate: Math.round((general.wins / general.total) * 100),
+            drawRate: Math.round((general.draws / general.total) * 100),
             avgAcc: Math.round(general.avgAcc || 0),
             white: { count: white.count, acc: Math.round(white.acc || 0), wr: Math.round(white.wr || 0) },
             black: { count: black.count, acc: Math.round(black.acc || 0), wr: Math.round(black.wr || 0) },
@@ -404,20 +407,25 @@ const SqliteStore = {
     },
 
     getMoveExplorer(fen) {
+        // Normalizamos a 3 partes para máxima compatibilidad de transposiciones 
+        // e ignorar el trap del cuadro En Passant (4a parte).
+        const normalizedSearchFen = fen.split(' ').slice(0, 3).join(' ');
+
         const query = `
             SELECT 
                 m.move_san,
                 a.color as userColor,
-                m.ply,
+                m.fen,
                 a.win,
                 m.evaluation,
                 m.label,
                 m.move_time
             FROM game_moves m
             JOIN analyses a ON m.game_id = a.id
-            WHERE m.fen LIKE ?
+            WHERE m.fen GLOB ?
         `;
-        const rows = db.prepare(query).all(`${fen}%`);
+        // Usamos GLOB para case-sensitivity (clave en ajedrez) y prefix matching
+        const rows = db.prepare(query).all(`${normalizedSearchFen}*`);
         
         const stats = {
             whitePerspective: { user: {}, opponent: {} },
@@ -425,7 +433,8 @@ const SqliteStore = {
         };
 
         for (const row of rows) {
-            const isWhiteMove = row.ply % 2 === 0;
+            // El color de la jugada lo dicta el FEN real almacenado, no el PLY
+            const isWhiteMove = row.fen.includes(' w ');
             const perspective = row.userColor === 'white' ? stats.whitePerspective : stats.blackPerspective;
             const isUserMove = (row.userColor === 'white' && isWhiteMove) || (row.userColor === 'black' && !isWhiteMove);
             
@@ -446,9 +455,10 @@ const SqliteStore = {
             const s = target[row.move_san];
             s.count++;
             
+            // Win status: 1 = Win, 0 = Draw, -1 = Loss
             if (row.win === 1) s.wins++;
-            else if (row.win === 0) s.losses++;
-            else s.draws++; // Assuming null or other value means draw if we handle it
+            else if (row.win === 0) s.draws++;
+            else if (row.win === -1) s.losses++;
 
             if (row.evaluation != null) {
                 s.totalEval += row.evaluation;
