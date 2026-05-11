@@ -62,6 +62,23 @@ db.exec(`
         FOREIGN KEY(game_id) REFERENCES analyses(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS analysis_full_data (
+        game_id TEXT PRIMARY KEY,
+        full_json TEXT,
+        FOREIGN KEY(game_id) REFERENCES analyses(gameId) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS puzzles (
+        id TEXT PRIMARY KEY,
+        createdAt TEXT,
+        fen TEXT,
+        solutionSequence TEXT,
+        initialMove TEXT,
+        theme TEXT,
+        difficulty TEXT,
+        solvedCount INTEGER DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_date ON analyses(date);
     CREATE INDEX IF NOT EXISTS idx_timeControl ON analyses(timeControl);
     CREATE INDEX IF NOT EXISTS idx_phase_game ON phase_accuracy(game_id);
@@ -92,12 +109,13 @@ const SqliteStore = {
         const insertPhase = db.prepare(`INSERT INTO phase_accuracy (game_id, phase, accuracy) VALUES (?, ?, ?)`);
         const insertQuality = db.prepare(`INSERT INTO move_quality (game_id, label, count) VALUES (?, ?, ?)`);
         const insertMove = db.prepare(`INSERT INTO game_moves (game_id, ply, move_san, evaluation, label, move_time, remaining_time, fen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        const insertFullData = db.prepare(`INSERT OR REPLACE INTO analysis_full_data (game_id, full_json) VALUES (?, ?)`);
         
         const deletePhases = db.prepare(`DELETE FROM phase_accuracy WHERE game_id = ?`);
         const deleteQuality = db.prepare(`DELETE FROM move_quality WHERE game_id = ?`);
         const deleteMoves = db.prepare(`DELETE FROM game_moves WHERE game_id = ?`);
 
-        const transaction = db.transaction((entry) => {
+        const transaction = db.transaction((entry, fullData) => {
             insertAnalysis.run(
                 entry.id,
                 entry.gameId,
@@ -147,9 +165,13 @@ const SqliteStore = {
                     );
                 }
             }
+
+            if (fullData) {
+                insertFullData.run(entry.gameId, JSON.stringify(fullData));
+            }
         });
 
-        return transaction(entry);
+        return transaction(entry, entry.fullData || null);
     },
 
 
@@ -157,6 +179,18 @@ const SqliteStore = {
         const query = `SELECT * FROM analyses WHERE gameId = ?`;
         const row = db.prepare(query).get(gameId);
         return row ? this._mapRow(row) : null;
+    },
+
+    getFull(gameId) {
+        const query = `SELECT full_json FROM analysis_full_data WHERE game_id = ?`;
+        const row = db.prepare(query).get(gameId);
+        if (!row || !row.full_json) return null;
+        try {
+            return JSON.parse(row.full_json);
+        } catch (e) {
+            console.error('[SqliteStore] Error parsing full_json:', e);
+            return null;
+        }
     },
 
     getAll(offset = 0, limit = 50) {
@@ -424,8 +458,10 @@ const SqliteStore = {
             JOIN analyses a ON m.game_id = a.id
             WHERE m.fen GLOB ?
         `;
-        // Usamos GLOB para case-sensitivity (clave en ajedrez) y prefix matching
-        const rows = db.prepare(query).all(`${normalizedSearchFen}*`);
+        // Usamos GLOB para case-sensitivity (clave en ajedrez) y prefix matching.
+        // Añadimos un espacio al final de las 3 partes para asegurar match exacto 
+        // del tercer campo (castling) y evitar que "KQ" matchee "KQkq".
+        const rows = db.prepare(query).all(`${normalizedSearchFen} *`);
         
         const stats = {
             whitePerspective: { user: {}, opponent: {} },
@@ -505,6 +541,41 @@ const SqliteStore = {
         db.prepare('DELETE FROM analyses').run();
         db.prepare('DELETE FROM phase_accuracy').run();
         db.prepare('DELETE FROM move_quality').run();
+    },
+
+    // ─── Puzzles ─────────────────────────────────────────────────────────────
+
+    getPuzzles() {
+        return db.prepare('SELECT * FROM puzzles ORDER BY createdAt DESC').all().map(p => ({
+            ...p,
+            solutionSequence: JSON.parse(p.solutionSequence)
+        }));
+    },
+
+    savePuzzle(puzzle) {
+        const stmt = db.prepare(`
+            INSERT INTO puzzles (id, createdAt, fen, solutionSequence, initialMove, theme, difficulty, solvedCount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        stmt.run(
+            puzzle.id,
+            puzzle.createdAt,
+            puzzle.fen,
+            JSON.stringify(puzzle.solutionSequence),
+            puzzle.initialMove,
+            puzzle.theme,
+            puzzle.difficulty,
+            puzzle.solvedCount || 0
+        );
+        return puzzle;
+    },
+
+    deletePuzzle(id) {
+        return db.prepare('DELETE FROM puzzles WHERE id = ?').run(id).changes > 0;
+    },
+
+    incrementPuzzleSolved(id) {
+        return db.prepare('UPDATE puzzles SET solvedCount = solvedCount + 1 WHERE id = ?').run(id).changes > 0;
     }
 };
 
