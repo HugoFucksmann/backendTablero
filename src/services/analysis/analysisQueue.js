@@ -145,7 +145,22 @@ class AnalysisQueue {
 
         console.log(`[Batch] Starting batch analysis of ${games.length} games`);
 
+        // ── Pre-spawnear pool de engines UNA SOLA VEZ ────────────────────────────
+        // Evita el overhead de spawn+handshake+destroy por cada partida.
+        // Con N=10 partidas y 2 engines: ahorra ~9 × 2 × 400ms ≈ 7 segundos.
+        const numEngines    = Math.max(1, engineConfig.threads ?? 1);
+        const hashPerEngine = Math.max(16, Math.floor((engineConfig.hash ?? 128) / numEngines));
+        const batchEngines  = Array.from({ length: numEngines }, () => new StockfishProcess());
+
         try {
+            await Promise.all(batchEngines.map(e => e.init({
+                ...engineConfig,
+                threads: 1,
+                hash: hashPerEngine,
+                multiPv: engineConfig.multiPv ?? 1,
+            })));
+            console.log(`[Batch] Engine pool ready: ${numEngines} engine(s)`);
+
             for (let i = 0; i < games.length; i++) {
                 if (signal.aborted) break;
 
@@ -171,16 +186,19 @@ class AnalysisQueue {
 
                 this._gameCoordinator = new GameAnalysisCoordinator();
 
-                await this._gameCoordinator.run(actualHistory, 0, gameId, engineConfig, {
-                    onProgress: (pct, label) => onGameProgress?.({ gameIndex: i, pct, label }),
-                    onMoveResult: (data) => callbacks.onMoveResult?.({ gameIndex: i, ...data }),
-                    onOpeningDetected: (data) => callbacks.onOpeningDetected?.({ gameIndex: i, ...data }),
-                    onComplete: (accuracy) => onGameComplete?.({ gameIndex: i, accuracy }),
-                    signal,
-                    startFen: actualStartFen
-                }, { playerColor, win, timeControl, times: game.times, username: game.username });
-
-
+                await this._gameCoordinator.run(
+                    actualHistory, 0, gameId, engineConfig,
+                    {
+                        onProgress: (pct, label) => onGameProgress?.({ gameIndex: i, pct, label }),
+                        onMoveResult: (data)     => callbacks.onMoveResult?.({ gameIndex: i, ...data }),
+                        onOpeningDetected: (data) => callbacks.onOpeningDetected?.({ gameIndex: i, ...data }),
+                        onComplete: (accuracy)   => onGameComplete?.({ gameIndex: i, accuracy }),
+                        signal,
+                        startFen: actualStartFen
+                    },
+                    { playerColor, win, timeControl, times: game.times, username: game.username },
+                    batchEngines   // ← reutiliza el pool sin re-spawnear
+                );
 
                 if (signal.aborted) break;
             }
@@ -194,6 +212,9 @@ class AnalysisQueue {
             if (e.name !== 'AbortError') onError?.(e);
             else onCancelled?.();
         } finally {
+            // Destruir el pool al terminar el lote (o en caso de error/cancelación)
+            batchEngines.forEach(e => e.destroy());
+            console.log('[Batch] Engine pool destroyed');
             this.running = false;
         }
     }

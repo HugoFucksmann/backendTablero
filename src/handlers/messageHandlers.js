@@ -1,8 +1,8 @@
-'use strict';
-
-const { GameStore } = require('../storage/gameStore');
-const { PuzzleStore } = require('../storage/puzzleStore');
+const { GameStore }      = require('../storage/gameStore');
+const { PuzzleStore }    = require('../storage/puzzleStore');
 const { OpeningService } = require('../services/openings/openingService');
+const { PolyglotBook }   = require('../services/openings/polyglotBook');
+const { Chess }          = require('chess.js');
 
 const handlers = {
     'analyze_position': (msg, { queue, send }) => {
@@ -148,6 +148,66 @@ const handlers = {
         GameStore.getMoveExplorer(fen.trim())
             .then(data => send({ type: 'move_explorer_data', fen: fen.trim(), ...data }))
             .catch(err => send({ type: 'error', message: err.message }));
+    },
+    // ── Libro Polyglot ────────────────────────────────────────────────
+
+    /**
+     * Devuelve los movimientos del libro Polyglot para una posición FEN.
+     * Respuesta: { type: 'book_moves', fen, moves: [{uci, san, weight, freq}], source }
+     */
+    'get_book_moves': (msg, { send }) => {
+        const { fen } = msg;
+        if (!fen || typeof fen !== 'string') {
+            send({ type: 'book_moves', fen: '', moves: [], source: 'none' });
+            return;
+        }
+
+        if (!PolyglotBook.loaded) {
+            send({ type: 'book_moves', fen, moves: [], source: 'none' });
+            return;
+        }
+
+        try {
+            const chess     = new Chess(fen);
+            const rawMoves  = PolyglotBook.lookup(chess);
+            const totalW    = rawMoves.reduce((s, m) => s + m.weight, 0);
+
+            const moves = rawMoves.map(m => {
+                const tmp = new Chess(fen);
+                let san = m.uci;
+                try {
+                    const r = tmp.move({
+                        from: m.uci.slice(0, 2),
+                        to:   m.uci.slice(2, 4),
+                        promotion: m.uci[4] || undefined,
+                    });
+                    san = r.san;
+                } catch { /* uci no aplicable — dejar como está */ }
+                return {
+                    uci:    m.uci,
+                    san,
+                    weight: m.weight,
+                    freq:   totalW > 0 ? Math.round((m.weight / totalW) * 100) : 0,
+                };
+            });
+
+            send({ type: 'book_moves', fen, moves, source: 'polyglot' });
+        } catch (e) {
+            send({ type: 'book_moves', fen, moves: [], source: 'error', error: e.message });
+        }
+    },
+
+    /**
+     * Devuelve la configuración activa del servidor (modo de apertura, etc.).
+     * Respuesta: { type: 'server_config', openingSource, polyglotLoaded }
+     */
+    'get_server_config': (msg, { send }) => {
+        send({
+            type:          'server_config',
+            openingSource: OpeningService.source,
+            polyglotLoaded: PolyglotBook.loaded,
+            polyglotEntries: PolyglotBook.entryCount,
+        });
     },
 };
 

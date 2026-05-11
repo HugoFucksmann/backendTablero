@@ -13,7 +13,7 @@ class GameAnalysisCoordinator {
     constructor() {
     }
 
-    async run(history, currentIndex, gameId, engineConfig = {}, callbacks = {}, extraInfo = {}) {
+    async run(history, currentIndex, gameId, engineConfig = {}, callbacks = {}, extraInfo = {}, prebuiltEngines = null) {
         const {
             onStatus, onProgress, onMoveResult, onOpeningDetected, onComplete, onError, signal, startFen
         } = callbacks;
@@ -31,32 +31,39 @@ class GameAnalysisCoordinator {
         // Instead of feeding all threads to a single engine (which is slow at shallow depths
         // due to Lazy SMP overhead), we spawn an independent engine per thread to process
         // multiple positions in parallel.
-        const numEngines = Math.max(1, threads);
+        const numEngines    = Math.max(1, threads);
         const hashPerEngine = Math.max(16, Math.floor(hash / numEngines));
+        const ownsEngines   = !prebuiltEngines;
+        const engines       = prebuiltEngines
+            ?? Array.from({ length: numEngines }, () => new StockfishProcess());
 
-        console.log(`[Game] Starting analysis: id=${gameId} | ${history.length} moves | Depth: ${depth} | MultiPV: ${multiPv} | Parallel Engines: ${numEngines} (1 thread each) | Hash/Engine: ${hashPerEngine}MB`);
+        console.log(
+            `[Game] Starting analysis: id=${gameId} | ${history.length} moves | Depth: ${depth} | ` +
+            `MultiPV: ${multiPv} | Engines: ${engines.length} | Reused: ${!ownsEngines}`
+        );
 
-        onStatus?.(true);
-        onProgress?.(0, 'Starting engines…');
-
-        const engines = Array.from({ length: numEngines }, () => new StockfishProcess());
-        
         const cleanupEngines = () => {
-            engines.forEach(e => e.destroy());
+            if (ownsEngines) engines.forEach(e => e.destroy());
         };
 
         try {
-            await Promise.all(engines.map(e => e.init({
-                ...engineConfig,
-                threads: 1,
-                hash: hashPerEngine,
-                multiPv
-            })));
+            // Solo spawneamos motores si son nuestros (no reutilizados del lote)
+            if (ownsEngines) {
+                await Promise.all(engines.map(e => e.init({
+                    ...engineConfig,
+                    threads: 1,
+                    hash: hashPerEngine,
+                    multiPv
+                })));
+            }
             
             if (signal.aborted) {
                 cleanupEngines();
                 return;
             }
+
+            onStatus?.(true);
+            onProgress?.(0, 'Analizando…');
 
             engines.forEach(e => e.newGame());
 
@@ -235,7 +242,7 @@ class GameAnalysisCoordinator {
                         moveCount: totalMoves,
                         date: new Date().toISOString(),
                         color: extraInfo.playerColor || 'white',
-                        win: extraInfo.win ?? 1,
+                        win: typeof extraInfo.win === 'boolean' ? (extraInfo.win ? 1 : -1) : (extraInfo.win ?? 1),
                         timeControl: extraInfo.timeControl || null,
                         accuracyByPhase,
                         labelCounts,

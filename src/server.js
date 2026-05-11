@@ -10,12 +10,18 @@ const { PuzzleExtractor } = require('./services/puzzles/puzzleExtractor');
 const { PuzzleStore } = require('./storage/puzzleStore');
 const { OpeningBook } = require('./services/openings/openingBook');
 const { OpeningService } = require('./services/openings/openingService');
+const { PolyglotBook } = require('./services/openings/polyglotBook');
 
 const { GameStore } = require('./storage/gameStore');
 const { handleClientMessage } = require('./handlers/messageHandlers');
 
-// Inicializar el libro de aperturas al arranque
+// Inicializar libros de aperturas al arranque
 OpeningBook.load();
+
+const GM_BOOK_PATH = require('path').join(__dirname, '..', 'data', 'gm2001.bin');
+PolyglotBook.load(GM_BOOK_PATH);
+console.log(`[Server] Opening source: ${OpeningService.source} | Polyglot ready: ${PolyglotBook.loaded}`);
+
 GameStore.runIntegrityCheck();
 
 const PORT = parseInt(process.env.PORT || '9001', 10);
