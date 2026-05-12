@@ -1,7 +1,7 @@
 const { GameStore }      = require('../storage/gameStore');
 const { PuzzleStore }    = require('../storage/puzzleStore');
 const { OpeningService } = require('../services/openings/openingService');
-const { PolyglotBook }   = require('../services/openings/polyglotBook');
+const { OpeningBook } = require('../services/openings/openingBook');
 const { Chess }          = require('chess.js');
 
 const handlers = {
@@ -162,36 +162,31 @@ const handlers = {
             return;
         }
 
-        if (!PolyglotBook.loaded) {
+        if (!OpeningBook.size) {
             send({ type: 'book_moves', fen, moves: [], source: 'none' });
             return;
         }
 
         try {
-            const chess     = new Chess(fen);
-            const rawMoves  = PolyglotBook.lookup(chess);
-            const totalW    = rawMoves.reduce((s, m) => s + m.weight, 0);
+            const rawMoves = OpeningBook.getMoves(fen);
+            const entry = OpeningBook.lookup(fen);
+            const totalW = rawMoves.reduce((s, m) => s + m.count, 0);
 
-            const moves = rawMoves.map(m => {
-                const tmp = new Chess(fen);
-                let san = m.uci;
-                try {
-                    const r = tmp.move({
-                        from: m.uci.slice(0, 2),
-                        to:   m.uci.slice(2, 4),
-                        promotion: m.uci[4] || undefined,
-                    });
-                    san = r.san;
-                } catch { /* uci no aplicable — dejar como está */ }
-                return {
-                    uci:    m.uci,
-                    san,
-                    weight: m.weight,
-                    freq:   totalW > 0 ? Math.round((m.weight / totalW) * 100) : 0,
-                };
+            const moves = rawMoves.map(m => ({
+                uci:    m.uci,
+                san:    m.san,
+                weight: m.count,
+                freq:   totalW > 0 ? Math.round((m.count / totalW) * 100) : 0,
+            }));
+
+            send({ 
+                type: 'book_moves', 
+                fen, 
+                moves, 
+                opening: entry?.name || 'Teoría de Aperturas',
+                eco: entry?.eco || '',
+                source: 'tsv' 
             });
-
-            send({ type: 'book_moves', fen, moves, source: 'polyglot' });
         } catch (e) {
             send({ type: 'book_moves', fen, moves: [], source: 'error', error: e.message });
         }
@@ -205,8 +200,7 @@ const handlers = {
         send({
             type:          'server_config',
             openingSource: OpeningService.source,
-            polyglotLoaded: PolyglotBook.loaded,
-            polyglotEntries: PolyglotBook.entryCount,
+            bookSize:      OpeningBook.size,
         });
     },
 };

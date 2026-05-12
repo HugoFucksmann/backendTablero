@@ -69,7 +69,6 @@ class OpeningBookClass {
         if (this._loaded) return;
 
         let parsedEntries = 0;
-        let indexedPositions = 0;
 
         for (const file of TSV_FILES) {
             const filePath = path.join(DATA_DIR, file);
@@ -90,43 +89,54 @@ class OpeningBookClass {
                 const [eco, name, pgn] = parts;
                 if (!pgn?.trim()) continue;
 
-                // Replay the PGN move-by-move and index EVERY intermediate position.
-                // This is the key fix: a player who plays e.g. "1.e4 e5 2.Nf3" should
-                // have ALL three positions recognized, not just the one that ends a named
-                // variation. Without this, only positions that happen to be the final
-                // move of some TSV entry are indexed.
                 try {
                     const chess = new Chess();
                     const entry = {
                         eco:      eco.trim(),
                         name:     name.trim(),
                         rootName: rootName(name.trim()),
+                        moves:    [] // To store child moves from this position in the dataset
                     };
 
                     // Parse moves from the PGN manually to step through them
-                    // chess.js loadPgn then history() is the safest approach
                     chess.loadPgn(pgn.trim());
-                    const moves = chess.history();
+                    const history = chess.history({ verbose: true });
 
-                    // Replay from scratch, storing each intermediate FEN
+                    // Replay from scratch, storing each intermediate FEN and the move that follows it
                     const replay = new Chess();
-                    for (const san of moves) {
-                        replay.move(san);
-                        // Use normalizeFen so the en passant square is
-                        // canonical — chess.js only writes e.g. 'e3' when a
-                        // pawn can actually capture, avoiding false misses.
-                        const key = normalizeFen(replay.fen());
+                    for (const move of history) {
+                        const fenBefore = normalizeFen(replay.fen());
+                        const san = move.san;
+                        const uci = move.from + move.to + (move.promotion || '');
 
-                        // For each intermediate position, keep the most specific entry.
-                        // "Most specific" = the entry whose PGN is longest (last to
-                        // write wins, since TSV rows are ordered general→specific).
+                        // Store the opening name/eco for the position AFTER the move
+                        replay.move(move);
+                        const fenAfter = normalizeFen(replay.fen());
+
+                        // 1. Index the opening info for the resulting position
                         // We always overwrite so later (more specific) entries win.
-                        if (!this._map.has(key)) indexedPositions++;
-                        this._map.set(key, entry);
+                        if (!this._map.has(fenAfter)) {
+                            this._map.set(fenAfter, { ...entry, nextMoves: new Map() });
+                        } else {
+                            const existing = this._map.get(fenAfter);
+                            existing.eco = entry.eco;
+                            existing.name = entry.name;
+                            existing.rootName = entry.rootName;
+                        }
+
+                        // 2. Index the move that leads from fenBefore to fenAfter
+                        if (!this._map.has(fenBefore)) {
+                            this._map.set(fenBefore, { eco: '', name: '', rootName: '', nextMoves: new Map() });
+                        }
+                        const beforeEntry = this._map.get(fenBefore);
+                        if (!beforeEntry.nextMoves.has(san)) {
+                            beforeEntry.nextMoves.set(san, { san, uci, count: 0 });
+                        }
+                        beforeEntry.nextMoves.get(san).count++;
                     }
 
                     parsedEntries++;
-                } catch {
+                } catch (err) {
                     // Malformed PGN — skip silently
                 }
             }
@@ -150,19 +160,24 @@ class OpeningBookClass {
      * @returns {{ eco: string, name: string, rootName: string } | null}
      */
     lookup(fen) {
-        return this._map.get(normalizeFen(fen)) ?? null;
+        const data = this._map.get(normalizeFen(fen));
+        if (!data) return null;
+        return { eco: data.eco, name: data.name, rootName: data.rootName };
+    }
+
+    /**
+     * Returns available moves from the book for a given FEN.
+     * @param {string} fen 
+     * @returns {Array<{san: string, uci: string, count: number}>}
+     */
+    getMoves(fen) {
+        const data = this._map.get(normalizeFen(fen));
+        if (!data || !data.nextMoves) return [];
+        return Array.from(data.nextMoves.values()).sort((a, b) => b.count - a.count);
     }
 
     /**
      * Finds the last known opening position at or before `upToPly`.
-     *
-     * Walks backwards from `upToPly` up to MAX_BACK steps until it finds a
-     * position that exists in the book.
-     *
-     * @param {string[]} positions  Array of FENs indexed by ply (positions[0] = start)
-     * @param {number}   upToPly   The current ply (0-indexed)
-     * @returns {{ entry: object|null, ply: number, movesBack: number }}
-     *          `entry` is null if no book position was found within MAX_BACK.
      */
     findLastKnown(positions, upToPly) {
         const limit = Math.max(0, upToPly - MAX_BACK);
@@ -170,7 +185,7 @@ class OpeningBookClass {
         for (let ply = upToPly; ply >= limit; ply--) {
             if (!positions[ply]) continue;
             const entry = this.lookup(positions[ply]);
-            if (entry) {
+            if (entry && entry.name) {
                 return { entry, ply, movesBack: upToPly - ply };
             }
         }
