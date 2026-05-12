@@ -135,7 +135,7 @@ class AnalysisQueue {
      */
     async analyzeGames(games, engineConfig = {}, callbacks = {}) {
         const { onGameStarted, onGameProgress, onGameComplete, onBatchComplete, onCancelled, onError } = callbacks;
-        
+
         this.cancel();
         if (!Array.isArray(games) || games.length === 0) return;
 
@@ -148,9 +148,9 @@ class AnalysisQueue {
         // ── Pre-spawnear pool de engines UNA SOLA VEZ ────────────────────────────
         // Evita el overhead de spawn+handshake+destroy por cada partida.
         // Con N=10 partidas y 2 engines: ahorra ~9 × 2 × 400ms ≈ 7 segundos.
-        const numEngines    = Math.max(1, engineConfig.threads ?? 1);
+        const numEngines = Math.max(1, engineConfig.threads ?? 1);
         const hashPerEngine = Math.max(16, Math.floor((engineConfig.hash ?? 128) / numEngines));
-        const batchEngines  = Array.from({ length: numEngines }, () => new StockfishProcess());
+        const batchEngines = Array.from({ length: numEngines }, () => new StockfishProcess());
 
         try {
             await Promise.all(batchEngines.map(e => e.init({
@@ -164,9 +164,13 @@ class AnalysisQueue {
             for (let i = 0; i < games.length; i++) {
                 if (signal.aborted) break;
 
+                // Enviar 'ucinewgame' a todos los motores para purgar Hash y heurísticas.
+                // Previene "cuelgues" eternos en finales por saturación en partidas largas o iteradas.
+                batchEngines.forEach(e => e.newGame());
+
                 const game = games[i];
                 const { history, gameId, pgn, startFen, playerColor, win, timeControl } = game;
-                
+
                 let actualHistory = history;
                 let actualStartFen = startFen;
 
@@ -190,9 +194,9 @@ class AnalysisQueue {
                     actualHistory, 0, gameId, engineConfig,
                     {
                         onProgress: (pct, label) => onGameProgress?.({ gameIndex: i, pct, label }),
-                        onMoveResult: (data)     => callbacks.onMoveResult?.({ gameIndex: i, ...data }),
+                        onMoveResult: (data) => callbacks.onMoveResult?.({ gameIndex: i, ...data }),
                         onOpeningDetected: (data) => callbacks.onOpeningDetected?.({ gameIndex: i, ...data }),
-                        onComplete: (accuracy)   => onGameComplete?.({ gameIndex: i, accuracy }),
+                        onComplete: (accuracy) => onGameComplete?.({ gameIndex: i, accuracy }),
                         signal,
                         startFen: actualStartFen
                     },

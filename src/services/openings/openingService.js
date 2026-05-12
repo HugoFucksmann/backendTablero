@@ -23,7 +23,7 @@ const RATINGS_PARAM          = '1800,2000,2200,2500';
 // Cambiar este valor para comparar ambos métodos.
 // El modo 'lichess' sigue usándose intacto en el panel de análisis normal.
 // ─────────────────────────────────────────────────────────────────────────────
-const OPENING_SOURCE = process.env.OPENING_SOURCE || 'lichess';
+const OPENING_SOURCE = process.env.OPENING_SOURCE || 'tsv';
 
 const openingCache = new Map();
 const MAX_CACHE_SIZE = 100;
@@ -215,6 +215,77 @@ async function detectOpeningsPolyglot({ positions, history, gameId, signal, onPl
     }
 }
 
+// ── Modo TSV Local (Offline, basado 100% en Lichess TSVs) ─────────────────────
+
+async function detectOpeningsLocalTSV({ positions, history, gameId, signal, onPlyResolved, onOpeningDetected }) {
+    if (openingCache.has(gameId)) {
+        const cache = openingCache.get(gameId);
+        const cachedBookPlies = cache.bookPlies instanceof Set
+            ? cache.bookPlies : new Set(cache.bookPlies);
+        (async () => {
+            for (let i = 0; i < history.length; i++) {
+                if (signal?.aborted) break;
+                onPlyResolved(i, cachedBookPlies.has(i));
+                if (i % 10 === 0) await new Promise(r => setImmediate(r));
+            }
+            if (!signal?.aborted) onOpeningDetected?.({ ...cache, bookPlies: cachedBookPlies });
+        })();
+        return;
+    }
+
+    console.log(`[Opening] Modo TSV Local | Analizando gameId=${gameId}`);
+
+    const maxPly = Math.min(history.length, MAX_BOOK_PLY);
+    const bookPlies = new Set();
+    let finalOpeningName = '';
+    let finalEcoCode = '';
+    let lastTheoryPly = -1;
+    let consecutiveNonBook = 0;
+
+    for (let ply = 0; ply < maxPly; ply++) {
+        if (signal?.aborted) break;
+
+        if (consecutiveNonBook >= MAX_CONSECUTIVE_NONBOOK) {
+            for (let i = ply; i < maxPly; i++) onPlyResolved(i, false);
+            break;
+        }
+
+        const fenAfter = positions[ply + 1];
+        if (!fenAfter) {
+            consecutiveNonBook++;
+            onPlyResolved(ply, false);
+            continue;
+        }
+
+        const localEntry = OpeningBook.lookup(fenAfter);
+
+        if (localEntry) {
+            finalOpeningName = localEntry.rootName || localEntry.name;
+            finalEcoCode = localEntry.eco;
+            bookPlies.add(ply);
+            lastTheoryPly = ply;
+            consecutiveNonBook = 0;
+            onPlyResolved(ply, true);
+        } else {
+            consecutiveNonBook++;
+            onPlyResolved(ply, false);
+        }
+    }
+
+    if (!signal?.aborted) {
+        const result = {
+            openingName: finalOpeningName || 'Desconocida',
+            ecoCode: finalEcoCode || '',
+            openingPly: lastTheoryPly,
+            bookPlies
+        };
+        
+        if (openingCache.size >= MAX_CACHE_SIZE) openingCache.delete(openingCache.keys().next().value);
+        openingCache.set(gameId, result);
+        onOpeningDetected?.(result);
+    }
+}
+
 // ── Modo Lichess (original, sin cambios) ──────────────────────────────────────
 
 async function detectOpeningsLichess({ positions, history, gameId, token, signal, onPlyResolved, onOpeningDetected }) {
@@ -361,6 +432,10 @@ const OpeningService = {
      */
     async detectOpenings(params) {
         const source = OPENING_SOURCE;
+        if (source === 'tsv') {
+            console.log('[Opening] Modo: TSV Local');
+            return detectOpeningsLocalTSV(params);
+        }
         if (source === 'polyglot') {
             console.log('[Opening] Modo: Polyglot (gm2001.bin)');
             return detectOpeningsPolyglot(params);

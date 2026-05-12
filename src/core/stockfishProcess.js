@@ -178,7 +178,9 @@ class StockfishProcess {
                         return;
                     }
                     this._engine.send(`position fen ${fen}`);
-                    this._engine.send(`go depth ${depth}`);
+                    // Se incluye movetime 30000 (30s) como seguro contra cuelgues eternos
+                    // en Depth 20+ al evaluar finales hiper-ramificados.
+                    this._engine.send(`go depth ${depth} movetime 30000`);
                     this._engine.lineHandler = searchHandler;
                 }
             };
@@ -206,7 +208,8 @@ class StockfishProcess {
                 }
                 this._engine.lineHandler = searchHandler;
                 this._engine.send(`position fen ${fen}`);
-                this._engine.send(`go depth ${depth}`);
+                // Seguro de 30s máximo por posición
+                this._engine.send(`go depth ${depth} movetime 30000`);
             }
         });
     }
