@@ -14,7 +14,8 @@ const ChessMath = {
             const sign = mate > 0 ? 1 : -1;
             return isBlackTurn ? -sign * 10 : sign * 10;
         }
-        const normalized = Math.max(-10, Math.min(10, cp / 100));
+        let normalized = Math.max(-10, Math.min(10, cp / 100));
+        normalized = Math.round(normalized * 100) / 100;
         return isBlackTurn ? -normalized : normalized;
     },
 };

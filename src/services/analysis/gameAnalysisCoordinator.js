@@ -76,13 +76,7 @@ class GameAnalysisCoordinator {
             const finalMoveData = new Array(totalMoves);
             let evaluatedCount = 0;
 
-            // Acumuladores por fase — se populan en _tryClassify
-            // Estructura: { phase: { wpLossSum, count } }
-            const phaseData = {
-                'Apertura':    { wpLossSum: 0, count: 0 },
-                'Medio Juego': { wpLossSum: 0, count: 0 },
-                'Final':       { wpLossSum: 0, count: 0 },
-            };
+
 
             // Acumulador de etiquetas: { Brillante: N, Mejor: N, ... }
             const labelCounts = {};
@@ -95,7 +89,7 @@ class GameAnalysisCoordinator {
                 signal,
                 onPlyResolved: (ply, isBook) => {
                     bookStatus[ply] = isBook;
-                    this._tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times);
+                    this._tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times);
                 },
                 onOpeningDetected: (data) => {
                     if (data?.openingName) detectedOpening = data.openingName;
@@ -110,7 +104,7 @@ class GameAnalysisCoordinator {
                     if (signal.aborted) return;
                     openingState.done = true;
                     for (let i = 0; i < totalMoves; i++) {
-                        this._tryClassify(i, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times);
+                        this._tryClassify(i, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times);
                     }
                 });
 
@@ -148,8 +142,8 @@ class GameAnalysisCoordinator {
                             lines: evalResult.lines,
                         });
 
-                        this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times);
-                        this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times);
+                        this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times);
+                        this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times);
 
                         const pct = Math.round((evaluatedCount / totalMoves) * 100);
                         onProgress?.(Math.min(99, pct), `Analyzing (${pct}%)`);
@@ -175,16 +169,23 @@ class GameAnalysisCoordinator {
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                 console.log(`[Game] Analysis completed in ${elapsed}s | Accuracy: W:${accuracy.white}% B:${accuracy.black}%`);
 
-                // Convertir acumuladores de fase a porcentaje de precisión
+                // Convertir acumuladores de fase a porcentaje de precisión reutilizando la evaluación general de la partida
                 const PHASE_COLORS = { 'Apertura': '#4caf50', 'Medio Juego': '#ff9800', 'Final': '#2196f3' };
-                const accuracyByPhase = Object.entries(phaseData)
-                    .filter(([, d]) => d.count > 0)
-                    .map(([phase, d]) => ({
-                        phase,
-                        // Precisión por fase: promedio de (1 - wpLoss) clampado a 0-100
-                        accuracy: Math.round(Math.max(0, Math.min(100, (1 - d.wpLossSum / d.count) * 100))),
-                        color: PHASE_COLORS[phase],
-                    }));
+                const accuracyByPhase = ['Apertura', 'Medio Juego', 'Final']
+                    .map(phase => {
+                        const movesInPhase = finalMoveData.filter(m => m && m.phase === phase);
+                        if (movesInPhase.length === 0) return null;
+                        
+                        const accObj = EvaluationEngine.calculateAccuracy(movesInPhase);
+                        const playerAcc = accObj[extraInfo.playerColor || 'white'];
+                        
+                        return {
+                            phase,
+                            accuracy: playerAcc,
+                            color: PHASE_COLORS[phase],
+                        };
+                    })
+                    .filter(Boolean);
 
                 // Persistencia automática
                 try {
@@ -263,7 +264,7 @@ class GameAnalysisCoordinator {
         }
     }
 
-    _tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, phaseData, labelCounts, times) {
+    _tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times) {
         if (completedSet.has(ply)) return;
 
         let moveTime = undefined;
@@ -291,8 +292,6 @@ class GameAnalysisCoordinator {
             } else {
                 const fen = positions[ply];
                 phase = PhaseDetector.detect(ply, fen, false);
-                phaseData[phase].wpLossSum += wpLoss;
-                phaseData[phase].count++;
                 labelCounts[label] = (labelCounts[label] ?? 0) + 1;
             }
 

@@ -101,14 +101,14 @@ const handlers = {
     },
 
     'get_stats': (msg, { send }) => {
-        const { filters = {} } = msg;
+        const { filters = {}, requestId } = msg;
         GameStore.getStats(filters).then(stats => {
             if (!stats) {
-                send({ type: 'stats_data', stats: { games: [], total: 0, avgAcc: 0, accuracyByPhase: [], moveQuality: [] } });
+                send({ type: 'stats_data', requestId, stats: { games: [], total: 0, avgAcc: 0, accuracyByPhase: [], moveQuality: [] } });
             } else {
-                send({ type: 'stats_data', stats });
+                send({ type: 'stats_data', requestId, stats });
             }
-        }).catch(err => send({ type: 'error', message: err.message }));
+        }).catch(err => send({ type: 'error', message: err.message, requestId }));
     },
 
     'get_analyses': (msg, { send }) => {
