@@ -187,6 +187,92 @@ class GameAnalysisCoordinator {
                     })
                     .filter(Boolean);
 
+                // --- Métricas Avanzadas ---
+                const advancedMetrics = {
+                    advantageStatus: 'none',
+                    comebackStatus: 'none',
+                    tiltEvents: 0,
+                    timeManagement: {
+                        avgMidgameTime: 0,
+                        avgBlunderTime: 0,
+                        ratio: 1
+                    }
+                };
+
+                const userColor = extraInfo.playerColor || 'white';
+                const isUserWhite = userColor === 'white';
+                let maxUserWp = 0;
+                let minUserWp = 1;
+                
+                let midgameTimeSum = 0, midgameCount = 0;
+                let blunderTimeSum = 0, blunderCount = 0;
+                let tiltCount = 0;
+
+                for (let i = 0; i < finalMoveData.length; i++) {
+                    const m = finalMoveData[i];
+                    if (!m) continue;
+                    
+                    const evalResult = evalResults[i + 1];
+                    if (evalResult && evalResult.wp !== undefined) {
+                        const userWp = isUserWhite ? evalResult.wp : (1 - evalResult.wp);
+                        if (userWp > maxUserWp) maxUserWp = userWp;
+                        if (userWp < minUserWp) minUserWp = userWp;
+                    }
+
+                    // TILT DETECTION: Error o Error grave
+                    if (m.isWhiteMove === isUserWhite && (m.label === 'Error' || m.label === 'Error grave')) {
+                        let lossSum = 0, count = 0;
+                        for (let j = i + 2; j <= i + 6; j += 2) {
+                            if (finalMoveData[j]) {
+                                lossSum += finalMoveData[j].wpLoss || 0;
+                                count++;
+                            }
+                        }
+                        if (count > 0) {
+                            const avgLoss = lossSum / count;
+                            if (avgLoss > 0.15) tiltCount++;
+                        }
+                    }
+
+                    // TIME MANAGEMENT
+                    if (m.isWhiteMove === isUserWhite && m.moveTime !== undefined) {
+                        if (m.phase === 'Medio Juego') {
+                            midgameTimeSum += m.moveTime;
+                            midgameCount++;
+                        }
+                        if (m.label === 'Error grave' || m.label === 'Insta-move Blunder' || m.label === 'Deep-think Blunder' || m.label === 'Time Pressure Error') {
+                            blunderTimeSum += m.moveTime;
+                            blunderCount++;
+                        }
+                    }
+                }
+
+                const winStatus = typeof extraInfo.win === 'boolean' ? (extraInfo.win ? 1 : -1) : (extraInfo.win ?? 1);
+
+                // 1. Conversión de Ventaja
+                if (maxUserWp > 0.75) {
+                    if (winStatus === 1) advancedMetrics.advantageStatus = 'CONVERTED';
+                    else advancedMetrics.advantageStatus = 'BLOWN_ADVANTAGE';
+                }
+
+                // 2. Resiliencia
+                if (minUserWp < 0.20) {
+                    if (winStatus === 1) advancedMetrics.comebackStatus = 'COMEBACK_WIN';
+                    else if (winStatus === 0) advancedMetrics.comebackStatus = 'SAVED_DRAW';
+                    else advancedMetrics.comebackStatus = 'FAILED';
+                }
+
+                // 3. Tilt
+                advancedMetrics.tiltEvents = tiltCount;
+
+                // 4. Gestión de Tiempo
+                if (midgameCount > 0) advancedMetrics.timeManagement.avgMidgameTime = midgameTimeSum / midgameCount;
+                if (blunderCount > 0) advancedMetrics.timeManagement.avgBlunderTime = blunderTimeSum / blunderCount;
+                if (advancedMetrics.timeManagement.avgMidgameTime > 0) {
+                    advancedMetrics.timeManagement.ratio = advancedMetrics.timeManagement.avgBlunderTime / advancedMetrics.timeManagement.avgMidgameTime;
+                }
+                // --- Fin Métricas Avanzadas ---
+
                 // Persistencia automática
                 try {
                     const fullData = {
@@ -247,6 +333,7 @@ class GameAnalysisCoordinator {
                         timeControl: extraInfo.timeControl || null,
                         accuracyByPhase,
                         labelCounts,
+                        advancedMetrics,
                         moves: movesToSave
                     }, fullData);
 

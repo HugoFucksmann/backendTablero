@@ -30,7 +30,8 @@ db.exec(`
         whiteAccuracy INTEGER,
         blackAccuracy INTEGER,
         accuracyByPhase TEXT,
-        labelCounts TEXT
+        labelCounts TEXT,
+        advancedMetrics TEXT
     );
 
 
@@ -92,6 +93,7 @@ db.exec(`
 try { db.exec("ALTER TABLE analyses ADD COLUMN eco TEXT;"); } catch(e) {}
 try { db.exec("ALTER TABLE analyses ADD COLUMN username TEXT;"); } catch(e) {}
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_username ON analyses(username);"); } catch(e) {}
+try { db.exec("ALTER TABLE analyses ADD COLUMN advancedMetrics TEXT;"); } catch(e) {}
 
 
 
@@ -101,8 +103,8 @@ const SqliteStore = {
             INSERT OR REPLACE INTO analyses (
                 id, gameId, username, createdAt, date, opening, eco, moveCount, 
                 color, win, timeControl, whiteAccuracy, blackAccuracy, 
-                accuracyByPhase, labelCounts
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                accuracyByPhase, labelCounts, advancedMetrics
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
 
@@ -131,7 +133,8 @@ const SqliteStore = {
                 entry.white?.accuracy ?? null,
                 entry.black?.accuracy ?? null,
                 JSON.stringify(entry.accuracyByPhase || []),
-                JSON.stringify(entry.labelCounts || {})
+                JSON.stringify(entry.labelCounts || {}),
+                JSON.stringify(entry.advancedMetrics || {})
             );
 
 
@@ -403,6 +406,41 @@ const SqliteStore = {
             LIMIT 3
         `).all(...subParams);
 
+        // 9. Métricas Avanzadas
+        const metricsRows = db.prepare(`
+            SELECT advancedMetrics
+            FROM analyses
+            ${idListClause}
+            AND advancedMetrics IS NOT NULL AND advancedMetrics != '{}'
+        `).all(...subParams);
+
+        const advancedStats = {
+            convertedAdvantages: 0, blownAdvantages: 0,
+            comebackWins: 0, savedDraws: 0, failedComebacks: 0,
+            tiltEvents: 0,
+            totalMidgameTime: 0, totalBlunderTime: 0, gamesWithTime: 0
+        };
+
+        for (const row of metricsRows) {
+            try {
+                const am = JSON.parse(row.advancedMetrics);
+                if (am.advantageStatus === 'CONVERTED') advancedStats.convertedAdvantages++;
+                if (am.advantageStatus === 'BLOWN_ADVANTAGE') advancedStats.blownAdvantages++;
+                
+                if (am.comebackStatus === 'COMEBACK_WIN') advancedStats.comebackWins++;
+                if (am.comebackStatus === 'SAVED_DRAW') advancedStats.savedDraws++;
+                if (am.comebackStatus === 'FAILED') advancedStats.failedComebacks++;
+                
+                if (am.tiltEvents) advancedStats.tiltEvents += am.tiltEvents;
+
+                if (am.timeManagement) {
+                    advancedStats.totalMidgameTime += am.timeManagement.avgMidgameTime || 0;
+                    advancedStats.totalBlunderTime += am.timeManagement.avgBlunderTime || 0;
+                    if (am.timeManagement.avgMidgameTime > 0) advancedStats.gamesWithTime++;
+                }
+            } catch (e) {}
+        }
+
         return {
             total: general.total,
             winRate: Math.round((general.wins / general.total) * 100),
@@ -415,7 +453,12 @@ const SqliteStore = {
             accuracyByPhase,
             moveQuality,
             blundersByTime,
-            dangerousOpenings
+            dangerousOpenings,
+            advancedStats: {
+                ...advancedStats,
+                avgMidgameTime: advancedStats.gamesWithTime > 0 ? (advancedStats.totalMidgameTime / advancedStats.gamesWithTime) : 0,
+                avgBlunderTime: advancedStats.gamesWithTime > 0 ? (advancedStats.totalBlunderTime / advancedStats.gamesWithTime) : 0
+            }
         };
     },
 
@@ -424,7 +467,7 @@ const SqliteStore = {
         if (!Array.isArray(ids)) ids = [ids];
         const stmt = db.prepare(`DELETE FROM analyses WHERE id = ?`);
         const transaction = db.transaction((ids) => {
-            for (const id of ids) stmt.run(id);
+            for (const id of ids) stmt.run(id);
         });
         transaction(ids);
     },
@@ -436,7 +479,8 @@ const SqliteStore = {
             white: { accuracy: row.whiteAccuracy },
             black: { accuracy: row.blackAccuracy },
             accuracyByPhase: JSON.parse(row.accuracyByPhase || '[]'),
-            labelCounts: JSON.parse(row.labelCounts || '{}')
+            labelCounts: JSON.parse(row.labelCounts || '{}'),
+            advancedMetrics: JSON.parse(row.advancedMetrics || '{}')
         };
     },
 
