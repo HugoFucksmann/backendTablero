@@ -31,6 +31,10 @@ const GameStore = {
         return SqliteStore.getAggregatedStats(filters);
     },
 
+    async getStatDetails(category, filters = {}) {
+        return SqliteStore.getStatDetails(category, filters);
+    },
+
     async getMoveExplorer(fen) {
         return SqliteStore.getMoveExplorer(fen);
     },

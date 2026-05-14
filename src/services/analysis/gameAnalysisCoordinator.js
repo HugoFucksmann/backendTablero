@@ -24,6 +24,16 @@ class GameAnalysisCoordinator {
         let detectedOpening = 'Unknown';
         let detectedEco = '';
         const times = extraInfo.times || [];
+        const playerWhite = extraInfo.playerWhite || null;
+        const playerBlack = extraInfo.playerBlack || null;
+
+        // Normalizar win a 1 (victoria) / 0 (empate) / -1 (derrota) una sola vez.
+        // extraInfo.win puede llegar como booleano (true/false) desde partidas Lichess
+        // o como número (1/0/-1) desde otras fuentes. El booleano false no puede
+        // representar empate, así que si viene como booleano se asume victoria o derrota.
+        const winNormalized = typeof extraInfo.win === 'boolean'
+            ? (extraInfo.win ? 1 : -1)
+            : (extraInfo.win === 0 ? 0 : (extraInfo.win > 0 ? 1 : -1));
 
         const hash = engineConfig.hash ?? 128;
         const threads = engineConfig.threads ?? 1;
@@ -31,10 +41,10 @@ class GameAnalysisCoordinator {
         // Instead of feeding all threads to a single engine (which is slow at shallow depths
         // due to Lazy SMP overhead), we spawn an independent engine per thread to process
         // multiple positions in parallel.
-        const numEngines    = Math.max(1, threads);
+        const numEngines = Math.max(1, threads);
         const hashPerEngine = Math.max(16, Math.floor(hash / numEngines));
-        const ownsEngines   = !prebuiltEngines;
-        const engines       = prebuiltEngines
+        const ownsEngines = !prebuiltEngines;
+        const engines = prebuiltEngines
             ?? Array.from({ length: numEngines }, () => new StockfishProcess());
 
         console.log(
@@ -56,7 +66,7 @@ class GameAnalysisCoordinator {
                     multiPv
                 })));
             }
-            
+
             if (signal.aborted) {
                 cleanupEngines();
                 return;
@@ -175,10 +185,10 @@ class GameAnalysisCoordinator {
                     .map(phase => {
                         const movesInPhase = finalMoveData.filter(m => m && m.phase === phase);
                         if (movesInPhase.length === 0) return null;
-                        
+
                         const accObj = EvaluationEngine.calculateAccuracy(movesInPhase);
                         const playerAcc = accObj[extraInfo.playerColor || 'white'];
-                        
+
                         return {
                             phase,
                             accuracy: playerAcc,
@@ -192,6 +202,9 @@ class GameAnalysisCoordinator {
                     advantageStatus: 'none',
                     comebackStatus: 'none',
                     tiltEvents: 0,
+                    tiltFens: [],
+                    comebackFens: [],
+                    blownAdvantageFens: [],
                     timeManagement: {
                         avgMidgameTime: 0,
                         avgBlunderTime: 0,
@@ -202,8 +215,12 @@ class GameAnalysisCoordinator {
                 const userColor = extraInfo.playerColor || 'white';
                 const isUserWhite = userColor === 'white';
                 let maxUserWp = 0;
+                let maxWpFen = null;
+                let maxWpFenPly = null;
                 let minUserWp = 1;
-                
+                let minWpFen = null;
+                let minWpFenPly = null;
+
                 let midgameTimeSum = 0, midgameCount = 0;
                 let blunderTimeSum = 0, blunderCount = 0;
                 let tiltCount = 0;
@@ -211,12 +228,20 @@ class GameAnalysisCoordinator {
                 for (let i = 0; i < finalMoveData.length; i++) {
                     const m = finalMoveData[i];
                     if (!m) continue;
-                    
+
                     const evalResult = evalResults[i + 1];
                     if (evalResult && evalResult.wp !== undefined) {
                         const userWp = isUserWhite ? evalResult.wp : (1 - evalResult.wp);
-                        if (userWp > maxUserWp) maxUserWp = userWp;
-                        if (userWp < minUserWp) minUserWp = userWp;
+                        if (userWp > maxUserWp) {
+                            maxUserWp = userWp;
+                            maxWpFen = m.fen;
+                            maxWpFenPly = i;
+                        }
+                        if (userWp < minUserWp) {
+                            minUserWp = userWp;
+                            minWpFen = m.fen;
+                            minWpFenPly = i;
+                        }
                     }
 
                     // TILT DETECTION: Error o Error grave
@@ -230,7 +255,10 @@ class GameAnalysisCoordinator {
                         }
                         if (count > 0) {
                             const avgLoss = lossSum / count;
-                            if (avgLoss > 0.15) tiltCount++;
+                            if (avgLoss > 0.15) {
+                                tiltCount++;
+                                advancedMetrics.tiltFens.push({ fen: m.fen, ply: i, avgLoss });
+                            }
                         }
                     }
 
@@ -247,23 +275,38 @@ class GameAnalysisCoordinator {
                     }
                 }
 
-                const winStatus = typeof extraInfo.win === 'boolean' ? (extraInfo.win ? 1 : -1) : (extraInfo.win ?? 1);
+                const winStatus = winNormalized;
 
                 // 1. Conversión de Ventaja
                 if (maxUserWp > 0.75) {
-                    if (winStatus === 1) advancedMetrics.advantageStatus = 'CONVERTED';
-                    else advancedMetrics.advantageStatus = 'BLOWN_ADVANTAGE';
+                    if (winStatus === 1) {
+                        advancedMetrics.advantageStatus = 'CONVERTED';
+                    } else {
+                        advancedMetrics.advantageStatus = 'BLOWN_ADVANTAGE';
+                        if (maxWpFen) advancedMetrics.blownAdvantageFens.push({ fen: maxWpFen, ply: maxWpFenPly });
+                    }
                 }
 
                 // 2. Resiliencia
                 if (minUserWp < 0.20) {
-                    if (winStatus === 1) advancedMetrics.comebackStatus = 'COMEBACK_WIN';
-                    else if (winStatus === 0) advancedMetrics.comebackStatus = 'SAVED_DRAW';
-                    else advancedMetrics.comebackStatus = 'FAILED';
+                    if (winStatus === 1) {
+                        advancedMetrics.comebackStatus = 'COMEBACK_WIN';
+                        if (minWpFen) advancedMetrics.comebackFens.push({ fen: minWpFen, ply: minWpFenPly });
+                    } else if (winStatus === 0) {
+                        advancedMetrics.comebackStatus = 'SAVED_DRAW';
+                        if (minWpFen) advancedMetrics.comebackFens.push({ fen: minWpFen, ply: minWpFenPly });
+                    } else {
+                        advancedMetrics.comebackStatus = 'FAILED';
+                    }
                 }
 
                 // 3. Tilt
                 advancedMetrics.tiltEvents = tiltCount;
+                // Limitar a los 2 colapsos más severos para no saturar las miniaturas
+                advancedMetrics.tiltFens = advancedMetrics.tiltFens
+                    .sort((a, b) => b.avgLoss - a.avgLoss)
+                    .slice(0, 2)
+                    .map(({ fen, ply }) => ({ fen, ply }));
 
                 // 4. Gestión de Tiempo
                 if (midgameCount > 0) advancedMetrics.timeManagement.avgMidgameTime = midgameTimeSum / midgameCount;
@@ -278,6 +321,9 @@ class GameAnalysisCoordinator {
                     const fullData = {
                         accuracy,
                         opening: { name: detectedOpening, eco: detectedEco },
+                        players: { white: playerWhite, black: playerBlack },
+                        startFen: startFen || null,
+                        historySan: history.map(m => typeof m === 'string' ? m : (m.lan ?? m.san)),
                         history: history.map(m => m.san || m),
                         positions,
                         evaluations: evalResults,
@@ -315,7 +361,10 @@ class GameAnalysisCoordinator {
                             label: m.label,
                             moveTime: m.moveTime,
                             remainingTime: m.remainingTime,
-                            fen: positions[idx]
+                            // positions[idx+1] = posición DESPUÉS del movimiento idx.
+                            // Así game_moves.fen siempre refleja el tablero resultante,
+                            // que es lo que muestran las miniaturas de estadísticas.
+                            fen: positions[idx + 1] ?? positions[idx]
                         };
                     });
 
@@ -329,7 +378,7 @@ class GameAnalysisCoordinator {
                         moveCount: totalMoves,
                         date: new Date().toISOString(),
                         color: extraInfo.playerColor || 'white',
-                        win: typeof extraInfo.win === 'boolean' ? (extraInfo.win ? 1 : -1) : (extraInfo.win ?? 1),
+                        win: winNormalized,
                         timeControl: extraInfo.timeControl || null,
                         accuracyByPhase,
                         labelCounts,
@@ -372,7 +421,7 @@ class GameAnalysisCoordinator {
         if (result) {
             const { label, isBook, wpLoss, isWhiteMove } = result;
             onMoveResult?.({ index: ply, label, isBook });
-            
+
             let phase = 'Medio Juego';
             if (isBook) {
                 phase = 'Apertura';
@@ -382,7 +431,9 @@ class GameAnalysisCoordinator {
                 labelCounts[label] = (labelCounts[label] ?? 0) + 1;
             }
 
-            finalMoveData[ply] = { label, isWhiteMove, wpLoss, isBook, phase, moveTime, remainingTime };
+            // positions[ply+1] es la posición DESPUÉS del movimiento ply,
+            // que es lo que queremos mostrar en las miniaturas de estadísticas.
+            finalMoveData[ply] = { label, isWhiteMove, wpLoss, isBook, phase, moveTime, remainingTime, fen: positions[ply + 1] };
             completedSet.add(ply);
         }
     }

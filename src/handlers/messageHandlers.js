@@ -1,8 +1,8 @@
-const { GameStore }      = require('../storage/gameStore');
-const { PuzzleStore }    = require('../storage/puzzleStore');
+const { GameStore } = require('../storage/gameStore');
+const { PuzzleStore } = require('../storage/puzzleStore');
 const { OpeningService } = require('../services/openings/openingService');
 const { OpeningBook } = require('../services/openings/openingBook');
-const { Chess }          = require('chess.js');
+const { Chess } = require('chess.js');
 
 const handlers = {
     'analyze_position': (msg, { queue, send }) => {
@@ -15,7 +15,7 @@ const handlers = {
     },
 
     'analyze_game': (msg, { queue, send }) => {
-        const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win, timeControl } = msg;
+        const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win, timeControl, playerWhite, playerBlack } = msg;
         queue.analyzeGame(history, currentIndex, gameId, engineConfig, {
             onStatus: (running) => send({ type: 'status', running }),
             onProgress: (pct, label) => send({ type: 'progress', pct, label }),
@@ -27,7 +27,7 @@ const handlers = {
             onComplete: (acc) => send({ type: 'complete', accuracy: acc }),
             onCancelled: () => send({ type: 'cancelled' }),
             onError: (err) => send({ type: 'error', message: err.message }),
-        }, startFen, { playerColor, win, timeControl }).catch((err) => {
+        }, startFen, { playerColor, win, timeControl, playerWhite, playerBlack }).catch((err) => {
             if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
         });
     },
@@ -111,6 +111,13 @@ const handlers = {
         }).catch(err => send({ type: 'error', message: err.message, requestId }));
     },
 
+    'get_stat_details': (msg, { send }) => {
+        const { category, filters = {}, requestId } = msg;
+        GameStore.getStatDetails(category, filters).then(details => {
+            send({ type: 'stat_details_data', requestId, category, details });
+        }).catch(err => send({ type: 'error', message: err.message, requestId }));
+    },
+
     'get_analyses': (msg, { send }) => {
         const { offset = 0, limit = 50 } = msg;
         GameStore.getAll(offset, limit).then(analyses => {
@@ -173,19 +180,19 @@ const handlers = {
             const totalW = rawMoves.reduce((s, m) => s + m.count, 0);
 
             const moves = rawMoves.map(m => ({
-                uci:    m.uci,
-                san:    m.san,
+                uci: m.uci,
+                san: m.san,
                 weight: m.count,
-                freq:   totalW > 0 ? Math.round((m.count / totalW) * 100) : 0,
+                freq: totalW > 0 ? Math.round((m.count / totalW) * 100) : 0,
             }));
 
-            send({ 
-                type: 'book_moves', 
-                fen, 
-                moves, 
+            send({
+                type: 'book_moves',
+                fen,
+                moves,
                 opening: entry?.name || 'Teoría de Aperturas',
                 eco: entry?.eco || '',
-                source: 'tsv' 
+                source: 'tsv'
             });
         } catch (e) {
             send({ type: 'book_moves', fen, moves: [], source: 'error', error: e.message });
@@ -198,9 +205,9 @@ const handlers = {
      */
     'get_server_config': (msg, { send }) => {
         send({
-            type:          'server_config',
+            type: 'server_config',
             openingSource: OpeningService.source,
-            bookSize:      OpeningBook.size,
+            bookSize: OpeningBook.size,
         });
     },
 };

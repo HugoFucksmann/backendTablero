@@ -90,10 +90,10 @@ db.exec(`
 `);
 
 // Migraciones rápidas para bases existentes
-try { db.exec("ALTER TABLE analyses ADD COLUMN eco TEXT;"); } catch(e) {}
-try { db.exec("ALTER TABLE analyses ADD COLUMN username TEXT;"); } catch(e) {}
-try { db.exec("CREATE INDEX IF NOT EXISTS idx_username ON analyses(username);"); } catch(e) {}
-try { db.exec("ALTER TABLE analyses ADD COLUMN advancedMetrics TEXT;"); } catch(e) {}
+try { db.exec("ALTER TABLE analyses ADD COLUMN eco TEXT;"); } catch (e) { }
+try { db.exec("ALTER TABLE analyses ADD COLUMN username TEXT;"); } catch (e) { }
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_username ON analyses(username);"); } catch (e) { }
+try { db.exec("ALTER TABLE analyses ADD COLUMN advancedMetrics TEXT;"); } catch (e) { }
 
 
 
@@ -112,7 +112,7 @@ const SqliteStore = {
         const insertQuality = db.prepare(`INSERT INTO move_quality (game_id, label, count) VALUES (?, ?, ?)`);
         const insertMove = db.prepare(`INSERT INTO game_moves (game_id, ply, move_san, evaluation, label, move_time, remaining_time, fen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
         const insertFullData = db.prepare(`INSERT OR REPLACE INTO analysis_full_data (game_id, full_json) VALUES (?, ?)`);
-        
+
         const deletePhases = db.prepare(`DELETE FROM phase_accuracy WHERE game_id = ?`);
         const deleteQuality = db.prepare(`DELETE FROM move_quality WHERE game_id = ?`);
         const deleteMoves = db.prepare(`DELETE FROM game_moves WHERE game_id = ?`);
@@ -247,10 +247,10 @@ const SqliteStore = {
         }
 
         const limit = (filters.count && filters.count !== 'all') ? parseInt(filters.count) : null;
-        
+
         // 0. Definir el subquery base para filtrar los IDs
         const subQuery = `SELECT id FROM analyses ${whereClause} ORDER BY date DESC ${limit ? `LIMIT ${limit}` : ''}`;
-        
+
         const idListClause = `WHERE id IN (${subQuery})`;
         const gameIdListClause = `WHERE game_id IN (${subQuery})`;
         const subParams = params; // Usamos los mismos params que el whereClause
@@ -426,11 +426,11 @@ const SqliteStore = {
                 const am = JSON.parse(row.advancedMetrics);
                 if (am.advantageStatus === 'CONVERTED') advancedStats.convertedAdvantages++;
                 if (am.advantageStatus === 'BLOWN_ADVANTAGE') advancedStats.blownAdvantages++;
-                
+
                 if (am.comebackStatus === 'COMEBACK_WIN') advancedStats.comebackWins++;
                 if (am.comebackStatus === 'SAVED_DRAW') advancedStats.savedDraws++;
                 if (am.comebackStatus === 'FAILED') advancedStats.failedComebacks++;
-                
+
                 if (am.tiltEvents) advancedStats.tiltEvents += am.tiltEvents;
 
                 if (am.timeManagement) {
@@ -438,7 +438,7 @@ const SqliteStore = {
                     advancedStats.totalBlunderTime += am.timeManagement.avgBlunderTime || 0;
                     if (am.timeManagement.avgMidgameTime > 0) advancedStats.gamesWithTime++;
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         return {
@@ -467,7 +467,8 @@ const SqliteStore = {
         if (!Array.isArray(ids)) ids = [ids];
         const stmt = db.prepare(`DELETE FROM analyses WHERE id = ?`);
         const transaction = db.transaction((ids) => {
-            for (const id of ids) stmt.run(id);
+
+            for (const id of ids) stmt.run(id);
         });
         transaction(ids);
     },
@@ -482,6 +483,77 @@ const SqliteStore = {
             labelCounts: JSON.parse(row.labelCounts || '{}'),
             advancedMetrics: JSON.parse(row.advancedMetrics || '{}')
         };
+    },
+
+    getStatDetails(category, filters = {}) {
+        let whereClause = "WHERE 1=1";
+        const params = [];
+
+        if (filters.username) {
+            whereClause += ` AND (username = ? OR username IS NULL)`;
+            params.push(filters.username);
+        }
+        if (filters.duration && filters.duration !== 'all') {
+            whereClause += ` AND timeControl = ?`;
+            params.push(filters.duration);
+        }
+        if (filters.time && filters.time !== 'all') {
+            const days = filters.time === '7d' ? 7 : 30;
+            const limitDate = new Date(Date.now() - days * 86400000).toISOString();
+            whereClause += ` AND date >= ?`;
+            params.push(limitDate);
+        }
+
+        const limit = (filters.count && filters.count !== 'all') ? parseInt(filters.count) : null;
+        const subQuery = `SELECT id FROM analyses ${whereClause} ORDER BY date DESC ${limit ? `LIMIT ${limit}` : ''}`;
+        const idListClause = `WHERE id IN (${subQuery})`;
+
+        const results = [];
+
+        if (['tilt', 'comeback', 'blown_advantage'].includes(category)) {
+            const rows = db.prepare(`
+                SELECT id, gameId, advancedMetrics 
+                FROM analyses 
+                ${idListClause} 
+                AND advancedMetrics IS NOT NULL
+            `).all(...params);
+
+            // game_moves.fen ahora guarda positions[ply+1] = posición DESPUÉS del movimiento.
+            // Buscamos por ply directamente sin necesitar ply+1.
+            const fenByPly = db.prepare(`
+                SELECT fen FROM game_moves WHERE game_id = ? AND ply = ?
+            `);
+
+            for (const row of rows) {
+                try {
+                    const am = JSON.parse(row.advancedMetrics);
+                    const extractData = (items, type) => {
+                        if (!items) return;
+                        items.forEach(item => {
+                            const ply = typeof item === 'string' ? null : (item.ply ?? null);
+
+                            // Buscar el fen en game_moves por ply (ya es posición después del movimiento).
+                            // Fallback al fen guardado en advancedMetrics para compatibilidad con datos viejos.
+                            let fen = typeof item === 'string' ? item : item.fen;
+                            if (ply !== null) {
+                                const fenRow = fenByPly.get(row.id, ply);
+                                if (fenRow?.fen) fen = fenRow.fen;
+                            }
+
+                            if (fen && typeof fen === 'string' && fen.trim()) {
+                                results.push({ gameId: row.gameId, analysisId: row.id, fen: fen.trim(), ply, type });
+                            }
+                        });
+                    };
+
+                    if (category === 'tilt') extractData(am.tiltFens, 'tilt');
+                    else if (category === 'comeback') extractData(am.comebackFens, 'comeback');
+                    else if (category === 'blown_advantage') extractData(am.blownAdvantageFens, 'blown_advantage');
+                } catch (e) { }
+            }
+        }
+
+        return results;
     },
 
     getMoveExplorer(fen) {
@@ -506,7 +578,7 @@ const SqliteStore = {
         // Añadimos un espacio al final de las 3 partes para asegurar match exacto 
         // del tercer campo (castling) y evitar que "KQ" matchee "KQkq".
         const rows = db.prepare(query).all(`${normalizedSearchFen} *`);
-        
+
         const stats = {
             whitePerspective: { user: {}, opponent: {} },
             blackPerspective: { user: {}, opponent: {} }
@@ -517,7 +589,7 @@ const SqliteStore = {
             const isWhiteMove = row.fen.includes(' w ');
             const perspective = row.userColor === 'white' ? stats.whitePerspective : stats.blackPerspective;
             const isUserMove = (row.userColor === 'white' && isWhiteMove) || (row.userColor === 'black' && !isWhiteMove);
-            
+
             const target = isUserMove ? perspective.user : perspective.opponent;
             if (!target[row.move_san]) {
                 target[row.move_san] = {
@@ -534,7 +606,7 @@ const SqliteStore = {
 
             const s = target[row.move_san];
             s.count++;
-            
+
             // Win status: 1 = Win, 0 = Draw, -1 = Loss
             if (row.win === 1) s.wins++;
             else if (row.win === 0) s.draws++;
