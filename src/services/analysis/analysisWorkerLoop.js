@@ -40,7 +40,6 @@ class AnalysisWorkerLoop {
     async run() {
         const { _positions, _engines, _depth, _multiPv, _signal, _order } = this;
         const total = _positions.length;
-        const evalResults = new Array(total).fill(null);
 
         let nextOrderIdx = 0;
         let evaluatedCount = 0;
@@ -65,11 +64,10 @@ class AnalysisWorkerLoop {
                         lines: mapLines(raw.lines, isBlackTurn),
                     };
 
-                    evalResults[posIdx] = evalResult;
                     evaluatedCount++;
 
                     this._onEvalReady?.(posIdx, evalResult);
-                    this._onProgress?.(evaluatedCount, total - 1); // total-1 = nº de jugadas
+                    this._onProgress?.(evaluatedCount, total); 
 
                 } catch (e) {
                     if (e.name === 'AbortError') break;
@@ -79,7 +77,6 @@ class AnalysisWorkerLoop {
         });
 
         await Promise.all(workers);
-        return evalResults;
     }
 }
 

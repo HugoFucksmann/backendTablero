@@ -45,9 +45,11 @@ class GameAnalysisCoordinator {
         const playerBlack = extraInfo.playerBlack || null;
 
         // Normalizar win: booleano (Lichess) o número (1/0/-1)
-        const winNormalized = typeof extraInfo.win === 'boolean'
-            ? (extraInfo.win ? 1 : -1)
-            : (extraInfo.win === 0 ? 0 : (extraInfo.win > 0 ? 1 : -1));
+        const winNormalized = extraInfo.win === undefined || extraInfo.win === null
+            ? null
+            : (typeof extraInfo.win === 'boolean'
+                ? (extraInfo.win ? 1 : -1)
+                : (extraInfo.win === 0 ? 0 : (extraInfo.win > 0 ? 1 : -1)));
 
         // ── Pool de engines ───────────────────────────────────────────────────
         const pool = new EnginePool(engineConfig, prebuiltEngines);
@@ -142,7 +144,7 @@ class GameAnalysisCoordinator {
                 },
             });
 
-            evalResultsRef = await workerLoop.run();
+            await workerLoop.run();
 
             if (!signal.aborted) {
                 await openingPromise.catch(() => { });

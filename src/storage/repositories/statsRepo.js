@@ -57,7 +57,7 @@ function buildWhereClause(filters = {}) {
         params.push(filters.duration);
     }
     if (filters.time && filters.time !== 'all') {
-        const days = filters.time === '7d' ? 7 : 30;
+        const days = parseInt(filters.time) || 30;
         const limitDate = new Date(Date.now() - days * 86400000).toISOString();
         clause += ' AND date >= ?';
         params.push(limitDate);

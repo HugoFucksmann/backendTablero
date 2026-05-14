@@ -65,8 +65,8 @@ function buildPositions(history, startFen = null) {
             positions.push(game.fen());
         } catch (e) {
             console.warn(`[Utils] Skipping invalid move: ${JSON.stringify(m)}`);
-            // Keep the previous FEN to maintain array length consistency if needed, 
-            // but usually we want to stop or skip. Here we skip.
+            // Mantenemos el array alineado duplicando la posición anterior
+            positions.push(positions[positions.length - 1]);
         }
     }
     return positions;

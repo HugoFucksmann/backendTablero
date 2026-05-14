@@ -137,6 +137,8 @@ const handlers = {
         GameStore.getFull(gameId).then(fullAnalysis => {
             if (fullAnalysis) {
                 send({ type: 'full_analysis_data', gameId, data: fullAnalysis });
+            } else {
+                send({ type: 'error', message: `Analysis not found for gameId: ${gameId}` });
             }
         }).catch(err => send({ type: 'error', message: err.message }));
     },

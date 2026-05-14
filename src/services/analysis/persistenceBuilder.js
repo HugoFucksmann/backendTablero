@@ -46,8 +46,7 @@ function build({
         opening: { name: opening.name, eco: opening.eco },
         players: { white: players.white, black: players.black },
         startFen: startFen || null,
-        historySan: history.map(m => (typeof m === 'string' ? m : (m.lan ?? m.san))),
-        history: history.map(m => m.san || m),
+        history: history.map(m => (typeof m === 'string' ? m : (m.lan ?? m.san))),
         positions,
         evaluations: evalResults,
         moveEvaluations: Object.fromEntries(
@@ -81,7 +80,7 @@ function build({
         return {
             ply: idx,
             san,
-            evaluation: evalResult?.wp,
+            evaluation: evalResult?.score,
             label: m.label,
             moveTime: m.moveTime,
             remaining_time: m.remainingTime,

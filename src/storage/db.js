@@ -89,7 +89,8 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS idx_quality_game  ON move_quality(game_id);
     CREATE INDEX IF NOT EXISTS idx_moves_game    ON game_moves(game_id);
     CREATE INDEX IF NOT EXISTS idx_moves_label   ON game_moves(label);
-    CREATE INDEX IF NOT EXISTS idx_moves_fen     ON game_moves(fen);
+    CREATE INDEX IF NOT EXISTS idx_moves_fen      ON game_moves(fen);
+    CREATE INDEX IF NOT EXISTS idx_moves_start_fen ON game_moves(start_fen);
 `);
 
 // ─── Migrations (incremental, safe to re-run) ─────────────────────────────────

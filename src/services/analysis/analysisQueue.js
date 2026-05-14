@@ -4,6 +4,7 @@ const { StockfishProcess } = require('../../core/stockfishProcess');
 const { ChessMath } = require('../../utils/chessMath');
 const { mapLines, parsePgn } = require('../../utils/analysisUtils');
 const { GameAnalysisCoordinator } = require('./gameAnalysisCoordinator');
+const { EnginePool } = require('./enginePool');
 
 /**
  * AnalysisQueue
@@ -147,19 +148,12 @@ class AnalysisQueue {
 
         // ── Pre-spawnear pool de engines UNA SOLA VEZ ────────────────────────────
         // Evita el overhead de spawn+handshake+destroy por cada partida.
-        // Con N=10 partidas y 2 engines: ahorra ~9 × 2 × 400ms ≈ 7 segundos.
-        const numEngines = Math.max(1, engineConfig.threads ?? 1);
-        const hashPerEngine = Math.max(16, Math.floor((engineConfig.hash ?? 128) / numEngines));
-        const batchEngines = Array.from({ length: numEngines }, () => new StockfishProcess());
+        const pool = new EnginePool(engineConfig);
 
         try {
-            await Promise.all(batchEngines.map(e => e.init({
-                ...engineConfig,
-                threads: 1,
-                hash: hashPerEngine,
-                multiPv: engineConfig.multiPv ?? 1,
-            })));
-            console.log(`[Batch] Engine pool ready: ${numEngines} engine(s)`);
+            await pool.init();
+            const batchEngines = pool.engines;
+            console.log(`[Batch] Engine pool ready: ${pool.count} engine(s)`);
 
             for (let i = 0; i < games.length; i++) {
                 if (signal.aborted) break;
@@ -217,7 +211,7 @@ class AnalysisQueue {
             else onCancelled?.();
         } finally {
             // Destruir el pool al terminar el lote (o en caso de error/cancelación)
-            batchEngines.forEach(e => e.destroy());
+            pool.destroy();
             console.log('[Batch] Engine pool destroyed');
             this.running = false;
         }
