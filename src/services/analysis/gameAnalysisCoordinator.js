@@ -1,105 +1,100 @@
 'use strict';
 
-const { ChessMath } = require('../../utils/chessMath');
 const { EvaluationEngine } = require('./evaluationRules');
 const { OpeningService } = require('../openings/openingService');
-const { buildPositions, buildAnalysisOrder, mapLines } = require('../../utils/analysisUtils');
+const { buildPositions, buildAnalysisOrder } = require('../../utils/analysisUtils');
 const { MoveClassifier } = require('./moveClassifier');
 const { PhaseDetector } = require('../../utils/phaseDetector');
-const { StockfishProcess } = require('../../core/stockfishProcess');
 const { GameStore } = require('../../storage/gameStore');
 
+const { EnginePool } = require('./enginePool');
+const { AnalysisWorkerLoop } = require('./analysisWorkerLoop');
+const { calculate: calcMetrics } = require('./advancedMetricsCalculator');
+const { build: buildPersistence } = require('./persistenceBuilder');
+
+/**
+ * GameAnalysisCoordinator
+ * ───────────────────────
+ * Orquestador puro: coordina el flujo de análisis sin implementar
+ * ninguna lógica de negocio directamente.
+ *
+ * Responsabilidades:
+ *   1. Inicializar y liberar el EnginePool.
+ *   2. Lanzar la detección de apertura y el loop de workers en paralelo.
+ *   3. Delegar clasificación, métricas y persistencia a sus módulos.
+ *   4. Emitir callbacks de progreso al caller.
+ */
 class GameAnalysisCoordinator {
-    constructor() {
-    }
+    constructor() { }
 
     async run(history, currentIndex, gameId, engineConfig = {}, callbacks = {}, extraInfo = {}, prebuiltEngines = null) {
         const {
-            onStatus, onProgress, onMoveResult, onOpeningDetected, onComplete, onError, signal, startFen
+            onStatus, onProgress, onMoveResult,
+            onOpeningDetected, onComplete, onError, signal, startFen,
         } = callbacks;
 
         const depth = engineConfig.depth ?? 18;
         const multiPv = engineConfig.multiPv ?? 1;
         const t0 = Date.now();
+
         let detectedOpening = 'Unknown';
         let detectedEco = '';
+
         const times = extraInfo.times || [];
         const playerWhite = extraInfo.playerWhite || null;
         const playerBlack = extraInfo.playerBlack || null;
 
-        // Normalizar win a 1 (victoria) / 0 (empate) / -1 (derrota) una sola vez.
-        // extraInfo.win puede llegar como booleano (true/false) desde partidas Lichess
-        // o como número (1/0/-1) desde otras fuentes. El booleano false no puede
-        // representar empate, así que si viene como booleano se asume victoria o derrota.
+        // Normalizar win: booleano (Lichess) o número (1/0/-1)
         const winNormalized = typeof extraInfo.win === 'boolean'
             ? (extraInfo.win ? 1 : -1)
             : (extraInfo.win === 0 ? 0 : (extraInfo.win > 0 ? 1 : -1));
 
-        const hash = engineConfig.hash ?? 128;
-        const threads = engineConfig.threads ?? 1;
-
-        // Instead of feeding all threads to a single engine (which is slow at shallow depths
-        // due to Lazy SMP overhead), we spawn an independent engine per thread to process
-        // multiple positions in parallel.
-        const numEngines = Math.max(1, threads);
-        const hashPerEngine = Math.max(16, Math.floor(hash / numEngines));
-        const ownsEngines = !prebuiltEngines;
-        const engines = prebuiltEngines
-            ?? Array.from({ length: numEngines }, () => new StockfishProcess());
+        // ── Pool de engines ───────────────────────────────────────────────────
+        const pool = new EnginePool(engineConfig, prebuiltEngines);
 
         console.log(
-            `[Game] Starting analysis: id=${gameId} | ${history.length} moves | Depth: ${depth} | ` +
-            `MultiPV: ${multiPv} | Engines: ${engines.length} | Reused: ${!ownsEngines}`
+            `[Game] Starting analysis: id=${gameId} | ${history.length} moves | ` +
+            `Depth: ${depth} | MultiPV: ${multiPv} | ` +
+            `Engines: ${pool.count} | Reused: ${!pool.ownsEngines}`
         );
 
-        const cleanupEngines = () => {
-            if (ownsEngines) engines.forEach(e => e.destroy());
-        };
-
         try {
-            // Solo spawneamos motores si son nuestros (no reutilizados del lote)
-            if (ownsEngines) {
-                await Promise.all(engines.map(e => e.init({
-                    ...engineConfig,
-                    threads: 1,
-                    hash: hashPerEngine,
-                    multiPv
-                })));
-            }
+            await pool.init();
 
-            if (signal.aborted) {
-                cleanupEngines();
-                return;
-            }
+            if (signal.aborted) return;
 
             onStatus?.(true);
             onProgress?.(0, 'Analizando…');
+            pool.newGame();
 
-            engines.forEach(e => e.newGame());
-
+            // ── Estado compartido entre apertura y workers ────────────────────
             const positions = buildPositions(history, startFen);
             const totalMoves = history.length;
-
-            const evalResults = new Array(positions.length).fill(null);
             const bookStatus = new Array(totalMoves).fill(null);
             const completedSet = new Set();
             const finalMoveData = new Array(totalMoves);
-            let evaluatedCount = 0;
-
-
-
-            // Acumulador de etiquetas: { Brillante: N, Mejor: N, ... }
             const labelCounts = {};
-
             const openingState = { done: false };
 
+            // Clasificar una jugada en cuanto tenga apertura + evaluación
+            const tryClassify = (ply) =>
+                this._tryClassify(
+                    ply, history, positions, evalResultsRef,
+                    bookStatus, openingState, finalMoveData,
+                    completedSet, onMoveResult, labelCounts, times
+                );
+
+            // evalResultsRef se rellena de forma lazy por el worker loop
+            let evalResultsRef = [];
+
+            // ── Apertura (paralela al análisis del motor) ─────────────────────
             const openingPromise = OpeningService.detectOpenings({
                 positions, history, gameId,
                 token: engineConfig.lichessToken || process.env.LICHESS_TOKEN,
                 signal,
                 onPlyResolved: (ply, isBook) => {
                     bookStatus[ply] = isBook;
-                    this._tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times);
+                    tryClassify(ply);
                 },
                 onOpeningDetected: (data) => {
                     if (data?.openingName) detectedOpening = data.openingName;
@@ -109,303 +104,129 @@ class GameAnalysisCoordinator {
             });
 
             openingPromise
-                .catch(() => { /* errors handled below */ })
+                .catch(() => { })
                 .finally(() => {
                     if (signal.aborted) return;
                     openingState.done = true;
-                    for (let i = 0; i < totalMoves; i++) {
-                        this._tryClassify(i, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times);
-                    }
+                    for (let i = 0; i < totalMoves; i++) tryClassify(i);
                 });
 
+            // ── Worker loop ───────────────────────────────────────────────────
             const order = buildAnalysisOrder(positions.length, currentIndex);
-            let nextOrderIdx = 0;
 
-            const workers = engines.map(async (engine) => {
-                while (nextOrderIdx < order.length) {
-                    if (signal.aborted) break;
+            const workerLoop = new AnalysisWorkerLoop({
+                positions,
+                engines: pool.engines,
+                depth,
+                multiPv,
+                signal,
+                order,
+                onEvalReady: (posIdx, evalResult) => {
+                    evalResultsRef[posIdx] = evalResult;
 
-                    const posIdx = order[nextOrderIdx++];
-                    const fen = positions[posIdx];
-                    const isBlackTurn = fen.includes(' b ');
+                    onMoveResult?.({
+                        index: posIdx === 0 ? -1 : posIdx - 1,
+                        score: evalResult.score,
+                        mate: evalResult.mate,
+                        bestMove: evalResult.bestMove,
+                        lines: evalResult.lines,
+                    });
 
-                    try {
-                        const raw = await engine.analyzePosition(fen, depth, signal, null, multiPv);
-                        if (signal.aborted) break;
-
-                        const evalResult = {
-                            wp: ChessMath.cpToWhiteWinProb(raw.score, raw.mate, isBlackTurn),
-                            score: ChessMath.cpToVisualScore(raw.score, raw.mate, isBlackTurn),
-                            mate: raw.mate,
-                            bestMove: raw.bestMove,
-                            lines: mapLines(raw.lines, isBlackTurn),
-                        };
-
-                        evalResults[posIdx] = evalResult;
-                        evaluatedCount++;
-
-                        onMoveResult?.({
-                            index: posIdx === 0 ? -1 : posIdx - 1,
-                            score: evalResult.score,
-                            mate: evalResult.mate,
-                            bestMove: evalResult.bestMove,
-                            lines: evalResult.lines,
-                        });
-
-                        this._tryClassify(posIdx - 1, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times);
-                        this._tryClassify(posIdx, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times);
-
-                        const pct = Math.round((evaluatedCount / totalMoves) * 100);
-                        onProgress?.(Math.min(99, pct), `Analyzing (${pct}%)`);
-
-                    } catch (e) {
-                        if (e.name === 'AbortError') break;
-                        console.error(`[Game] Engine error at ply ${posIdx}:`, e.message);
-                    }
-                }
+                    // Intentar clasificar la jugada previa y la actual
+                    tryClassify(posIdx - 1);
+                    tryClassify(posIdx);
+                },
+                onProgress: (evaluated, total) => {
+                    const pct = Math.round((evaluated / total) * 100);
+                    onProgress?.(Math.min(99, pct), `Analyzing (${pct}%)`);
+                },
             });
 
-            await Promise.all(workers);
+            evalResultsRef = await workerLoop.run();
 
             if (!signal.aborted) {
                 await openingPromise.catch(() => { });
             }
 
+            // ── Finalización ──────────────────────────────────────────────────
             if (signal.aborted) {
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                 console.log(`[Game] Analysis cancelled after ${elapsed}s | id=${gameId}`);
-            } else {
-                const accuracy = EvaluationEngine.calculateAccuracy(finalMoveData);
-                const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                console.log(`[Game] Analysis completed in ${elapsed}s | Accuracy: W:${accuracy.white}% B:${accuracy.black}%`);
-
-                // Convertir acumuladores de fase a porcentaje de precisión reutilizando la evaluación general de la partida
-                const PHASE_COLORS = { 'Apertura': '#4caf50', 'Medio Juego': '#ff9800', 'Final': '#2196f3' };
-                const accuracyByPhase = ['Apertura', 'Medio Juego', 'Final']
-                    .map(phase => {
-                        const movesInPhase = finalMoveData.filter(m => m && m.phase === phase);
-                        if (movesInPhase.length === 0) return null;
-
-                        const accObj = EvaluationEngine.calculateAccuracy(movesInPhase);
-                        const playerAcc = accObj[extraInfo.playerColor || 'white'];
-
-                        return {
-                            phase,
-                            accuracy: playerAcc,
-                            color: PHASE_COLORS[phase],
-                        };
-                    })
-                    .filter(Boolean);
-
-                // --- Métricas Avanzadas ---
-                const advancedMetrics = {
-                    advantageStatus: 'none',
-                    comebackStatus: 'none',
-                    tiltEvents: 0,
-                    tiltFens: [],
-                    comebackFens: [],
-                    blownAdvantageFens: [],
-                    timeManagement: {
-                        avgMidgameTime: 0,
-                        avgBlunderTime: 0,
-                        ratio: 1
-                    }
-                };
-
-                const userColor = extraInfo.playerColor || 'white';
-                const isUserWhite = userColor === 'white';
-                let maxUserWp = 0;
-                let maxWpFen = null;
-                let maxWpFenPly = null;
-                let minUserWp = 1;
-                let minWpFen = null;
-                let minWpFenPly = null;
-
-                let midgameTimeSum = 0, midgameCount = 0;
-                let blunderTimeSum = 0, blunderCount = 0;
-                let tiltCount = 0;
-
-                for (let i = 0; i < finalMoveData.length; i++) {
-                    const m = finalMoveData[i];
-                    if (!m) continue;
-
-                    const evalResult = evalResults[i + 1];
-                    if (evalResult && evalResult.wp !== undefined) {
-                        const userWp = isUserWhite ? evalResult.wp : (1 - evalResult.wp);
-                        if (userWp > maxUserWp) {
-                            maxUserWp = userWp;
-                            maxWpFen = m.fen;
-                            maxWpFenPly = i;
-                        }
-                        if (userWp < minUserWp) {
-                            minUserWp = userWp;
-                            minWpFen = m.fen;
-                            minWpFenPly = i;
-                        }
-                    }
-
-                    // TILT DETECTION: Error o Error grave
-                    if (m.isWhiteMove === isUserWhite && (m.label === 'Error' || m.label === 'Error grave')) {
-                        let lossSum = 0, count = 0;
-                        for (let j = i + 2; j <= i + 6; j += 2) {
-                            if (finalMoveData[j]) {
-                                lossSum += finalMoveData[j].wpLoss || 0;
-                                count++;
-                            }
-                        }
-                        if (count > 0) {
-                            const avgLoss = lossSum / count;
-                            if (avgLoss > 0.15) {
-                                tiltCount++;
-                                advancedMetrics.tiltFens.push({ fen: m.fen, ply: i, avgLoss });
-                            }
-                        }
-                    }
-
-                    // TIME MANAGEMENT
-                    if (m.isWhiteMove === isUserWhite && m.moveTime !== undefined) {
-                        if (m.phase === 'Medio Juego') {
-                            midgameTimeSum += m.moveTime;
-                            midgameCount++;
-                        }
-                        if (m.label === 'Error grave' || m.label === 'Insta-move Blunder' || m.label === 'Deep-think Blunder' || m.label === 'Time Pressure Error') {
-                            blunderTimeSum += m.moveTime;
-                            blunderCount++;
-                        }
-                    }
-                }
-
-                const winStatus = winNormalized;
-
-                // 1. Conversión de Ventaja
-                if (maxUserWp > 0.75) {
-                    if (winStatus === 1) {
-                        advancedMetrics.advantageStatus = 'CONVERTED';
-                    } else {
-                        advancedMetrics.advantageStatus = 'BLOWN_ADVANTAGE';
-                        if (maxWpFen) advancedMetrics.blownAdvantageFens.push({ fen: maxWpFen, ply: maxWpFenPly });
-                    }
-                }
-
-                // 2. Resiliencia
-                if (minUserWp < 0.20) {
-                    if (winStatus === 1) {
-                        advancedMetrics.comebackStatus = 'COMEBACK_WIN';
-                        if (minWpFen) advancedMetrics.comebackFens.push({ fen: minWpFen, ply: minWpFenPly });
-                    } else if (winStatus === 0) {
-                        advancedMetrics.comebackStatus = 'SAVED_DRAW';
-                        if (minWpFen) advancedMetrics.comebackFens.push({ fen: minWpFen, ply: minWpFenPly });
-                    } else {
-                        advancedMetrics.comebackStatus = 'FAILED';
-                    }
-                }
-
-                // 3. Tilt
-                advancedMetrics.tiltEvents = tiltCount;
-                // Limitar a los 2 colapsos más severos para no saturar las miniaturas
-                advancedMetrics.tiltFens = advancedMetrics.tiltFens
-                    .sort((a, b) => b.avgLoss - a.avgLoss)
-                    .slice(0, 2)
-                    .map(({ fen, ply }) => ({ fen, ply }));
-
-                // 4. Gestión de Tiempo
-                if (midgameCount > 0) advancedMetrics.timeManagement.avgMidgameTime = midgameTimeSum / midgameCount;
-                if (blunderCount > 0) advancedMetrics.timeManagement.avgBlunderTime = blunderTimeSum / blunderCount;
-                if (advancedMetrics.timeManagement.avgMidgameTime > 0) {
-                    advancedMetrics.timeManagement.ratio = advancedMetrics.timeManagement.avgBlunderTime / advancedMetrics.timeManagement.avgMidgameTime;
-                }
-                // --- Fin Métricas Avanzadas ---
-
-                // Persistencia automática
-                try {
-                    const fullData = {
-                        accuracy,
-                        opening: { name: detectedOpening, eco: detectedEco },
-                        players: { white: playerWhite, black: playerBlack },
-                        startFen: startFen || null,
-                        historySan: history.map(m => typeof m === 'string' ? m : (m.lan ?? m.san)),
-                        history: history.map(m => m.san || m),
-                        positions,
-                        evaluations: evalResults,
-                        moveEvaluations: Object.fromEntries(
-                            Array.from(completedSet)
-                                .filter(idx => finalMoveData[idx]?.label)
-                                .map(idx => [idx, finalMoveData[idx].label])
-                        ),
-                        movePhases: Object.fromEntries(
-                            Array.from(completedSet)
-                                .filter(idx => finalMoveData[idx]?.phase)
-                                .map(idx => [idx, finalMoveData[idx].phase])
-                        ),
-                        bestMoves: Object.fromEntries(
-                            Array.from(completedSet)
-                                .filter(idx => evalResults[idx + 1]?.bestMove)
-                                .map(idx => [idx, evalResults[idx + 1].bestMove])
-                        ),
-                        alternativeLines: Object.fromEntries(
-                            Array.from(completedSet)
-                                .filter(idx => evalResults[idx + 1]?.lines)
-                                .map(idx => [idx, evalResults[idx + 1].lines])
-                        )
-                    };
-
-                    const movesToSave = Array.from(completedSet).map(idx => {
-                        const m = finalMoveData[idx];
-                        const historyMove = history[idx];
-                        const san = typeof historyMove === 'string' ? historyMove : historyMove.san;
-                        const evalResult = evalResults[idx + 1];
-                        return {
-                            ply: idx,
-                            san,
-                            evaluation: evalResult?.wp,
-                            label: m.label,
-                            moveTime: m.moveTime,
-                            remainingTime: m.remainingTime,
-                            // positions[idx+1] = posición DESPUÉS del movimiento idx.
-                            // Así game_moves.fen siempre refleja el tablero resultante,
-                            // que es lo que muestran las miniaturas de estadísticas.
-                            fen: positions[idx + 1] ?? positions[idx]
-                        };
-                    });
-
-                    await GameStore.save({
-                        gameId,
-                        username: extraInfo.username || null,
-                        white: { accuracy: accuracy.white },
-                        black: { accuracy: accuracy.black },
-                        opening: detectedOpening,
-                        eco: detectedEco,
-                        moveCount: totalMoves,
-                        date: new Date().toISOString(),
-                        color: extraInfo.playerColor || 'white',
-                        win: winNormalized,
-                        timeControl: extraInfo.timeControl || null,
-                        accuracyByPhase,
-                        labelCounts,
-                        advancedMetrics,
-                        moves: movesToSave
-                    }, fullData);
-
-                } catch (e) {
-                    console.error('[Game] Failed to save analysis:', e.message);
-                }
-
-                onComplete?.(accuracy);
-                onProgress?.(100, 'Analysis completed');
+                return;
             }
 
+            const accuracy = EvaluationEngine.calculateAccuracy(finalMoveData);
+            const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+            console.log(`[Game] Analysis completed in ${elapsed}s | Accuracy: W:${accuracy.white}% B:${accuracy.black}%`);
+
+            // ── Métricas avanzadas ────────────────────────────────────────────
+            const { accuracyByPhase, advancedMetrics } = calcMetrics({
+                finalMoveData,
+                evalResults: evalResultsRef,
+                playerColor: extraInfo.playerColor || 'white',
+                winNormalized,
+            });
+
+            // ── Persistencia ──────────────────────────────────────────────────
+            try {
+                const { fullData, movesToSave } = buildPersistence({
+                    gameId,
+                    history,
+                    positions,
+                    evalResults: evalResultsRef,
+                    finalMoveData,
+                    completedSet,
+                    accuracy,
+                    opening: { name: detectedOpening, eco: detectedEco },
+                    players: { white: playerWhite, black: playerBlack },
+                    startFen,
+                });
+
+                await GameStore.save({
+                    gameId,
+                    username: extraInfo.username || null,
+                    white: { accuracy: accuracy.white },
+                    black: { accuracy: accuracy.black },
+                    opening: detectedOpening,
+                    eco: detectedEco,
+                    moveCount: totalMoves,
+                    date: new Date().toISOString(),
+                    color: extraInfo.playerColor || 'white',
+                    win: winNormalized,
+                    timeControl: extraInfo.timeControl || null,
+                    accuracyByPhase,
+                    labelCounts,
+                    advancedMetrics,
+                    moves: movesToSave,
+                }, fullData);
+
+            } catch (e) {
+                console.error('[Game] Failed to save analysis:', e.message);
+            }
+
+            onComplete?.(accuracy);
+            onProgress?.(100, 'Analysis completed');
+
         } finally {
-            cleanupEngines();
+            pool.destroy();
             onStatus?.(false);
         }
     }
 
+    // ── Clasificación de jugadas ──────────────────────────────────────────────
+
+    /**
+     * Intenta clasificar la jugada `ply` si tiene todos los datos disponibles
+     * (evaluación antes y después, y estado de apertura resuelto).
+     * Idempotente: si ya fue clasificada, no hace nada.
+     */
     _tryClassify(ply, history, positions, evalResults, bookStatus, openingState, finalMoveData, completedSet, onMoveResult, labelCounts, times) {
         if (completedSet.has(ply)) return;
 
         let moveTime = undefined;
         let remainingTime = undefined;
-        if (times && times.length > ply) {
+
+        if (times?.length > ply) {
             remainingTime = times[ply];
             if (ply >= 2 && times[ply - 2] !== undefined) {
                 moveTime = times[ply - 2] - times[ply];
@@ -415,29 +236,30 @@ class GameAnalysisCoordinator {
         const result = MoveClassifier.classify({
             ply, history, positions, evalResults,
             bookStatus, openingDone: openingState.done,
-            moveTime, remainingTime
+            moveTime, remainingTime,
         });
 
-        if (result) {
-            const { label, isBook, wpLoss, isWhiteMove } = result;
-            onMoveResult?.({ index: ply, label, isBook });
+        if (!result) return;
 
-            let phase = 'Medio Juego';
-            if (isBook) {
-                phase = 'Apertura';
-            } else {
-                const fen = positions[ply];
-                phase = PhaseDetector.detect(ply, fen, false);
-                labelCounts[label] = (labelCounts[label] ?? 0) + 1;
-            }
+        const { label, isBook, wpLoss, isWhiteMove } = result;
+        onMoveResult?.({ index: ply, label, isBook });
 
-            // positions[ply+1] es la posición DESPUÉS del movimiento ply,
-            // que es lo que queremos mostrar en las miniaturas de estadísticas.
-            finalMoveData[ply] = { label, isWhiteMove, wpLoss, isBook, phase, moveTime, remainingTime, fen: positions[ply + 1] };
-            completedSet.add(ply);
+        let phase = 'Medio Juego';
+        if (isBook) {
+            phase = 'Apertura';
+        } else {
+            phase = PhaseDetector.detect(ply, positions[ply], false);
+            labelCounts[label] = (labelCounts[label] ?? 0) + 1;
         }
-    }
 
+        finalMoveData[ply] = {
+            label, isWhiteMove, wpLoss, isBook, phase,
+            moveTime, remainingTime,
+            // positions[ply+1] = posición DESPUÉS del movimiento ply
+            fen: positions[ply + 1],
+        };
+        completedSet.add(ply);
+    }
 }
 
 module.exports = { GameAnalysisCoordinator };
