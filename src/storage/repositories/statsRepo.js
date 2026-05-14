@@ -397,14 +397,14 @@ const StatsRepo = {
             SELECT
                 m.move_san,
                 a.color  as userColor,
-                m.fen,
+                m.start_fen,
                 a.win,
                 m.evaluation,
                 m.label,
                 m.move_time
             FROM game_moves m
             JOIN analyses a ON m.game_id = a.id
-            WHERE m.fen GLOB ?
+            WHERE m.start_fen GLOB ?
         `).all(`${normalizedFen} *`);
         // GLOB is case-sensitive (required for FEN) and uses prefix matching.
         // The trailing space + wildcard ensures the castling field is matched exactly
@@ -416,7 +416,7 @@ const StatsRepo = {
         };
 
         for (const row of rows) {
-            const isWhiteMove = row.fen.includes(' w ');
+            const isWhiteMove = row.start_fen.includes(' w ');
             const perspective = row.userColor === 'white' ? stats.whitePerspective : stats.blackPerspective;
             const isUserMove = (row.userColor === 'white' && isWhiteMove) || (row.userColor === 'black' && !isWhiteMove);
             const target = isUserMove ? perspective.user : perspective.opponent;

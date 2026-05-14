@@ -84,10 +84,11 @@ function build({
             evaluation: evalResult?.wp,
             label: m.label,
             moveTime: m.moveTime,
-            remainingTime: m.remainingTime,
-            // positions[idx+1] = posición DESPUÉS del movimiento idx.
-            // Las miniaturas de estadísticas muestran el tablero resultante.
+            remaining_time: m.remainingTime,
+            // fen: posición DESPUÉS del movimiento (para miniaturas)
             fen: positions[idx + 1] ?? positions[idx],
+            // start_fen: posición ANTES del movimiento (para explorador)
+            start_fen: positions[idx],
         };
     });
 

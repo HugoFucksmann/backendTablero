@@ -60,6 +60,7 @@ db.exec(`
         move_time      INTEGER,
         remaining_time INTEGER,
         fen            TEXT,
+        start_fen      TEXT,
         PRIMARY KEY (game_id, ply),
         FOREIGN KEY(game_id) REFERENCES analyses(id) ON DELETE CASCADE
     );
