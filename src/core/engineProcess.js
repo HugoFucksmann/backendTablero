@@ -4,12 +4,15 @@ const { spawn } = require('child_process');
 const STOCKFISH_PATH = process.env.STOCKFISH_PATH || 'stockfish';
 
 const EngineState = Object.freeze({
-    DEAD:      'dead',
-    STARTING:  'starting',
-    IDLE:      'idle',
+    DEAD: 'dead',
+    STARTING: 'starting',
+    IDLE: 'idle',
     SEARCHING: 'searching',
-    STOPPING:  'stopping',
+    STOPPING: 'stopping',
 });
+
+// [FIX] Límite de 1MB para el buffer de salida (Protección OOM)
+const MAX_BUFFER_SIZE = 1024 * 1024;
 
 class EngineProcess {
     constructor() {
@@ -31,6 +34,8 @@ class EngineProcess {
         this._lineBuf = '';
 
         return new Promise((resolve, reject) => {
+            let isResolved = false;
+
             try {
                 console.log(`[Engine] Spawning: ${STOCKFISH_PATH}`);
                 this._proc = spawn(STOCKFISH_PATH, [], { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -39,14 +44,17 @@ class EngineProcess {
                 return reject(err);
             }
 
-            this._proc.stderr.on('data', (data) => {
-                console.error('[Engine STDERR]', data.toString().trim());
+            // [FIX] Esperar confirmación del OS antes de resolver para evitar errores EPIPE
+            this._proc.once('spawn', () => {
+                if (!isResolved) { isResolved = true; resolve(); }
             });
+
+            this._proc.stderr.on('data', (data) => console.error('[Engine STDERR]', data.toString().trim()));
 
             this._proc.on('error', (err) => {
                 if (this._sessionId !== currentSession) return;
                 this._handleDeath(currentSession);
-                reject(err);
+                if (!isResolved) { isResolved = true; reject(err); }
             });
 
             this._proc.on('exit', () => {
@@ -56,26 +64,28 @@ class EngineProcess {
 
             this._proc.stdout.on('data', (chunk) => {
                 if (this._sessionId !== currentSession) return;
-                
+
                 this._lineBuf += chunk.toString();
+
+                // [FIX] Abortar si el motor crashea y manda data infinita sin saltos de línea
+                if (this._lineBuf.length > MAX_BUFFER_SIZE) {
+                    console.error('[Engine CRITICAL] Output buffer exceeded 1MB. Killing rogue process.');
+                    this.kill();
+                    return;
+                }
+
                 let newLineIdx;
                 while ((newLineIdx = this._lineBuf.indexOf('\n')) !== -1) {
                     const line = this._lineBuf.slice(0, newLineIdx).trim();
                     this._lineBuf = this._lineBuf.slice(newLineIdx + 1);
-                    if (line && this.lineHandler) {
-                        this.lineHandler(line);
-                    }
+                    if (line && this.lineHandler) this.lineHandler(line);
                 }
             });
-
-            resolve();
         });
     }
 
     send(command) {
-        if (this._proc?.stdin?.writable) {
-            this._proc.stdin.write(command + '\n');
-        }
+        if (this._proc?.stdin?.writable) this._proc.stdin.write(command + '\n');
     }
 
     kill() {
@@ -86,15 +96,13 @@ class EngineProcess {
         this._sessionId += 1;
 
         if (proc) {
-            try { proc.stdin.write('quit\n'); } catch {}
-            try { proc.stdin.destroy(); } catch {}
-            try { proc.kill('SIGTERM'); } catch {}
+            try { proc.stdin.write('quit\n'); } catch { }
+            try { proc.stdin.destroy(); } catch { }
+            try { proc.kill('SIGTERM'); } catch { }
         }
     }
 
-    get isAlive() {
-        return this._proc !== null && this.state !== EngineState.DEAD;
-    }
+    get isAlive() { return this._proc !== null && this.state !== EngineState.DEAD; }
 
     _handleDeath(session) {
         if (this._sessionId !== session) return;

@@ -4,7 +4,7 @@ require('dotenv').config();
 const http = require('http');
 const { WebSocketServer } = require('ws');
 
-// Imports refactorizados
+// Imports
 const { AnalysisQueue } = require('./services/analysis/analysisQueue');
 const { PuzzleExtractor } = require('./services/puzzles/puzzleExtractor');
 const { PuzzleStore } = require('./storage/puzzleStore');
@@ -13,9 +13,16 @@ const { OpeningService } = require('./services/openings/openingService');
 const { GameStore } = require('./storage/gameStore');
 const { handleClientMessage } = require('./handlers/messageHandlers');
 
+// [FIX] Listeners globales para prevenir caídas de proceso por errores no capturados
+process.on('uncaughtException', (err) => {
+    console.error('[Process CRITICAL] Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Process CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // Inicializar libros de aperturas al arranque
 OpeningBook.load();
-
 console.log(`[Server] Opening source: ${OpeningService.source} | TSV Book size: ${OpeningBook.size} entries`);
 
 GameStore.runIntegrityCheck();
@@ -27,7 +34,8 @@ const server = http.createServer((_req, res) => {
     res.end(JSON.stringify({ status: 'chess-analysis-server', version: '1.1.0' }));
 });
 
-const wss = new WebSocketServer({ server });
+// [FIX] Límite de Payload (1MB) para prevenir ataques OOM (Denegación de Servicio)
+const wss = new WebSocketServer({ server, maxPayload: 1024 * 1024 });
 
 wss.on('connection', (ws) => {
     console.log('[Server] Client connected');
@@ -39,7 +47,7 @@ wss.on('connection', (ws) => {
         try {
             msg = JSON.parse(raw.toString());
         } catch {
-            ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON payload' }));
             return;
         }
 
@@ -72,5 +80,31 @@ server.listen(PORT, '127.0.0.1', () => {
     console.log(`[Server] Chess analysis server listening on ws://127.0.0.1:${PORT}`);
 });
 
-process.on('SIGINT', () => { console.log('\n[Server] Shutting down...'); server.close(); process.exit(0); });
-process.on('SIGTERM', () => { server.close(); process.exit(0); });
+// [FIX] Graceful Shutdown real: Cierra conexiones WS, BD y limpia recursos antes de salir
+let isShuttingDown = false;
+async function gracefulShutdown(signal) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`\n[Server] Received ${signal}. Shutting down gracefully...`);
+
+    wss.clients.forEach((client) => {
+        client.close(1001, 'Server shutting down');
+    });
+
+    // Asegurar que las transacciones WAL de SQLite se escriban en disco
+    await GameStore.closeDatabase();
+
+    server.close(() => {
+        console.log('[Server] Closed HTTP/WS connections. Exiting process.');
+        process.exit(0);
+    });
+
+    // Timeout de seguridad: Si no cierra en 5 seg, fuerza la salida
+    setTimeout(() => {
+        console.error('[Server] Forced exit after timeout.');
+        process.exit(1);
+    }, 5000).unref();
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

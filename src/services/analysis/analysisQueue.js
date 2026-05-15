@@ -6,12 +6,7 @@ const { mapLines, parsePgn } = require('../../utils/analysisUtils');
 const { GameAnalysisCoordinator } = require('./gameAnalysisCoordinator');
 const { EnginePool } = require('./enginePool');
 
-/**
- * AnalysisQueue
- * ─────────────
- * Responsibility: Manages the engine lifecycle for a single client session.
- * Dispatches between live position analysis and full game analysis.
- */
+
 class AnalysisQueue {
     constructor() {
         this._sf = new StockfishProcess();
@@ -35,16 +30,12 @@ class AnalysisQueue {
         this._sf.destroy();
     }
 
-    /**
-     * Analyzes a single position (Live mode).
-     */
+
     async analyzePosition(fen, moveIndex, config = {}, callbacks = {}) {
         const { onProgress, onResult, onError } = callbacks;
 
         this.cancel();
-        // If the engine was mid-initialization, wait for it to settle before
-        // proceeding. This prevents the new analyzePosition from racing with
-        // a concurrent _spawnAndHandshake that cancel() couldn't interrupt.
+
         try { await this._sf._initPromise; } catch { /* ignore — we'll re-init below */ }
 
         this._ac = new AbortController();
@@ -93,9 +84,7 @@ class AnalysisQueue {
         }
     }
 
-    /**
-     * Analyzes a full game history.
-     */
+
     async analyzeGame(history, currentIndex, gameId, engineConfig = {}, callbacks = {}, startFen = null, extraInfo = {}) {
         this.cancel();
         if (!history || history.length === 0) return;
@@ -131,9 +120,7 @@ class AnalysisQueue {
         }
     }
 
-    /**
-     * Analyzes multiple games sequentially.
-     */
+
     async analyzeGames(games, engineConfig = {}, callbacks = {}) {
         const { onGameStarted, onGameProgress, onGameComplete, onBatchComplete, onCancelled, onError } = callbacks;
 

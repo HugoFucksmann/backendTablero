@@ -3,56 +3,57 @@
 const { randomUUID } = require('crypto');
 const { SqliteStore } = require('./sqliteStore');
 
-const GameStore = {
-    async getAll(offset = 0, limit = 50) {
-        return SqliteStore.getAll(offset, limit);
-    },
+// [FIX] Helper unificado para garantizar que TODAS las operaciones bloqueantes 
+// de SQLite cedan su turno en el V8 Main Thread antes de ejecutarse.
+const asyncOffload = (fn) => new Promise((resolve, reject) => {
+    setImmediate(() => {
+        try { resolve(fn()); } catch (e) { reject(e); }
+    });
+});
 
-    async getFull(gameId) {
-        return SqliteStore.getFull(gameId);
-    },
+const GameStore = {
+    async getAll(offset = 0, limit = 50) { return asyncOffload(() => SqliteStore.getAll(offset, limit)); },
+    async getFull(gameId) { return asyncOffload(() => SqliteStore.getFull(gameId)); },
+    async getFullRaw(gameId) { return asyncOffload(() => SqliteStore.getFullRaw(gameId)); },
 
     async save(analysis, fullData = null) {
-        // Check if we already have an analysis for this gameId to avoid duplicates
-        const existing = SqliteStore.getByGameId(analysis.gameId);
-        
-        const entry = {
-            id: existing ? existing.id : randomUUID(),
-            createdAt: existing ? existing.createdAt : new Date().toISOString(),
-            ...analysis,
-            fullData // Pasamos los datos completos al SqliteStore
-        };
-
-        SqliteStore.save(entry);
-        return entry;
+        return asyncOffload(() => {
+            const existing = SqliteStore.getByGameId(analysis.gameId);
+            const entry = { id: existing ? existing.id : randomUUID(), createdAt: existing ? existing.createdAt : new Date().toISOString(), ...analysis, fullData };
+            SqliteStore.save(entry);
+            return entry;
+        });
     },
 
-    async getStats(filters = {}) {
-        return SqliteStore.getAggregatedStats(filters);
-    },
-
-    async getStatDetails(category, filters = {}) {
-        return SqliteStore.getStatDetails(category, filters);
-    },
-
-    async getMoveExplorer(fen) {
-        return SqliteStore.getMoveExplorer(fen);
-    },
+    async getStats(filters = {}) { return asyncOffload(() => SqliteStore.getAggregatedStats(filters)); },
+    async getStatDetails(category, filters = {}) { return asyncOffload(() => SqliteStore.getStatDetails(category, filters)); },
+    async getMoveExplorer(fen) { return asyncOffload(() => SqliteStore.getMoveExplorer(fen)); },
 
     async delete(ids) {
-        if (!Array.isArray(ids)) ids = [ids];
-        SqliteStore.delete(ids);
-        return true;
+        return asyncOffload(() => {
+            if (!Array.isArray(ids)) ids = [ids];
+            SqliteStore.delete(ids);
+            return true;
+        });
     },
 
-    async clear() {
-        SqliteStore.clear();
-    },
+    async clear() { return asyncOffload(() => { SqliteStore.clear(); }); },
 
-    async runIntegrityCheck() {
-        // Ya no es necesario el chequeo de archivos huérfanos ya que todo reside en SQL 
-        // con claves foráneas y borrado en cascada.
-        console.log('[GameStore] Integrity check (SQL-only mode): OK');
+    async runIntegrityCheck() { console.log('[GameStore] Integrity check (SQL-only mode): OK'); },
+
+    // [FIX] Expuesto para el Graceful Shutdown
+    async closeDatabase() {
+        return asyncOffload(() => {
+            try {
+                const db = require('../db');
+                if (db.open) {
+                    db.close();
+                    console.log('[GameStore] Database connection closed safely.');
+                }
+            } catch (e) {
+                console.error('[GameStore] Error closing database:', e);
+            }
+        });
     }
 };
 
