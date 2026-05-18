@@ -14,6 +14,7 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const db = new Database(DB_PATH);
+db.pragma('foreign_keys = ON');
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,10 @@ const migrations = [
     "ALTER TABLE analyses ADD COLUMN username TEXT",
     "ALTER TABLE analyses ADD COLUMN advancedMetrics TEXT",
     "CREATE INDEX IF NOT EXISTS idx_username ON analyses(username)",
+    // Added: opponent name and real game date (vs createdAt which is analysis date)
+    "ALTER TABLE analyses ADD COLUMN opponent TEXT",
+    "ALTER TABLE analyses ADD COLUMN gameDate TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_gameDate ON analyses(gameDate)",
 ];
 
 for (const sql of migrations) {

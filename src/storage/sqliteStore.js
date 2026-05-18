@@ -21,6 +21,7 @@ const SqliteStore = {
     save: (entry) => AnalysisRepo.save(entry),
     getByGameId: (gameId) => AnalysisRepo.findByGameId(gameId),
     getAll: (offset, limit) => AnalysisRepo.findAll(offset, limit),
+    getAllGameIds: () => AnalysisRepo.findAllGameIds(),
     getFull: (gameId) => AnalysisRepo.findFullData(gameId),
     delete: (ids) => AnalysisRepo.delete(ids),
     clear: () => AnalysisRepo.clear(),

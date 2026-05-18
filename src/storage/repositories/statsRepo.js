@@ -53,13 +53,29 @@ function buildWhereClause(filters = {}) {
         params.push(filters.username);
     }
     if (filters.duration && filters.duration !== 'all') {
-        clause += ' AND timeControl = ?';
-        params.push(filters.duration);
+        // timeControl is stored as "600+5" (seconds+increment) or "10m" etc.
+        // Map the UI values ("1m", "3m"...) to second ranges.
+        const durationMap = {
+            '1m':  [0,    90],    // bullet: <90s
+            '3m':  [90,   240],   // blitz 3m: 90-240s
+            '5m':  [240,  420],   // blitz 5m: 240-420s
+            '10m': [420,  900],   // rapid 10m
+            '15m': [900,  1200],  // rapid 15m
+            '30m': [1200, 99999], // classical
+        };
+        const range = durationMap[filters.duration];
+        if (range) {
+            // Extract initial seconds: CAST(SUBSTR(timeControl, 1, INSTR(timeControl||'+', '+')-1) AS INTEGER)
+            clause += ` AND CAST(SUBSTR(COALESCE(timeControl,'0'), 1,
+                MAX(1, INSTR(COALESCE(timeControl,'0')||'+', '+') - 1)) AS INTEGER) BETWEEN ? AND ?`;
+            params.push(range[0], range[1]);
+        }
     }
     if (filters.time && filters.time !== 'all') {
         const days = parseInt(filters.time) || 30;
         const limitDate = new Date(Date.now() - days * 86400000).toISOString();
-        clause += ' AND date >= ?';
+        // Use gameDate (real match date) when available, fallback to analysis date
+        clause += ' AND COALESCE(gameDate, date) >= ?';
         params.push(limitDate);
     }
 
@@ -75,7 +91,7 @@ function buildWhereClause(filters = {}) {
  */
 function buildScopeFragments(whereClause, params, limit) {
     const limitSql = limit ? `LIMIT ${limit}` : '';
-    const subQuery = `SELECT id FROM analyses ${whereClause} ORDER BY date DESC ${limitSql}`;
+    const subQuery = `SELECT id FROM analyses ${whereClause} ORDER BY COALESCE(gameDate, date) DESC ${limitSql}`;
     return {
         idListClause: `WHERE id      IN (${subQuery})`,
         gameIdListClause: `WHERE game_id IN (${subQuery})`,
@@ -332,10 +348,11 @@ const StatsRepo = {
         const { idListClause } = buildScopeFragments(clause, params, limit);
 
         const rows = db.prepare(`
-            SELECT id, gameId, advancedMetrics
-            FROM analyses
-            ${idListClause}
-            AND advancedMetrics IS NOT NULL
+            SELECT a.id, a.gameId, a.win, a.color, a.advancedMetrics, f.full_json
+            FROM analyses a
+            LEFT JOIN analysis_full_data f ON f.game_id = a.gameId
+            ${idListClause.replace('id IN', 'a.id IN')}
+            AND a.advancedMetrics IS NOT NULL
         `).all(...params);
 
         // Looks up the FEN stored after a move (position after ply N).
@@ -367,12 +384,24 @@ const StatsRepo = {
                     }
 
                     if (fen && typeof fen === 'string' && fen.trim()) {
+                        let opponent = 'Desconocido';
+                        if (row.full_json) {
+                            try {
+                                const gameData = JSON.parse(row.full_json);
+                                const headers = gameData.gameHeaders || {};
+                                opponent = row.color === 'white' ? (headers.Black || 'Desconocido') : (headers.White || 'Desconocido');
+                            } catch (e) {}
+                        }
+
                         results.push({
                             gameId: row.gameId,
                             analysisId: row.id,
                             fen: fen.trim(),
                             ply,
                             type: category,
+                            win: row.win,
+                            color: row.color,
+                            opponent
                         });
                     }
                 }

@@ -43,6 +43,8 @@ class GameAnalysisCoordinator {
         const times = extraInfo.times || [];
         const playerWhite = extraInfo.playerWhite || null;
         const playerBlack = extraInfo.playerBlack || null;
+        const opponent = extraInfo.opponent || null;
+        const gameDate = extraInfo.gameDate || null;
 
         // Normalizar win: booleano (Lichess) o número (1/0/-1)
         const winNormalized = extraInfo.win === undefined || extraInfo.win === null
@@ -200,6 +202,8 @@ class GameAnalysisCoordinator {
                     labelCounts,
                     advancedMetrics,
                     moves: movesToSave,
+                    opponent,
+                    gameDate,
                 }, fullData);
 
             } catch (e) {

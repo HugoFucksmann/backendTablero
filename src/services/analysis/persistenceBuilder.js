@@ -46,6 +46,9 @@ function build({
         opening: { name: opening.name, eco: opening.eco },
         players: { white: players.white, black: players.black },
         startFen: startFen || null,
+        // historySan: SAN strings (e4, Nf3) — required by applyFullAnalysis to replay moves via chess.js
+        historySan: history.map(m => (typeof m === 'string' ? m : m.san)),
+        // history: LAN strings (e2e4) — kept for backward compat / UCI tooling
         history: history.map(m => (typeof m === 'string' ? m : (m.lan ?? m.san))),
         positions,
         evaluations: evalResults,

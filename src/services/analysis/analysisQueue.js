@@ -163,7 +163,7 @@ class AnalysisQueue {
                 batchEngines.forEach(e => e.newGame());
 
                 const game = games[i];
-                const { history, gameId, pgn, startFen, playerColor, win, timeControl } = game;
+                const { history, gameId, pgn, startFen, playerColor, win, timeControl, opponent, gameDate } = game;
 
                 let actualHistory = history;
                 let actualStartFen = startFen;
@@ -173,6 +173,9 @@ class AnalysisQueue {
                     actualHistory = parsed.history;
                     actualStartFen = parsed.startFen;
                     game.times = parsed.times;
+                    // Extract player names from PGN headers so they're persisted in fullData.players
+                    if (!game.playerWhite && parsed.headers?.White) game.playerWhite = parsed.headers.White;
+                    if (!game.playerBlack && parsed.headers?.Black) game.playerBlack = parsed.headers.Black;
                 }
 
                 if (!actualHistory || actualHistory.length === 0) {
@@ -194,7 +197,10 @@ class AnalysisQueue {
                         signal,
                         startFen: actualStartFen
                     },
-                    { playerColor, win, timeControl, times: game.times, username: game.username },
+                    { playerColor, win, timeControl, times: game.times, username: game.username,
+                      playerWhite: game.playerWhite || null, playerBlack: game.playerBlack || null,
+                      opponent: opponent || game.opponent || null,
+                      gameDate: gameDate || game.gameDate || null },
                     batchEngines   // ← reutiliza el pool sin re-spawnear
                 );
 

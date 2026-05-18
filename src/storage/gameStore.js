@@ -8,6 +8,10 @@ const GameStore = {
         return SqliteStore.getAll(offset, limit);
     },
 
+    async getAllGameIds() {
+        return SqliteStore.getAllGameIds();
+    },
+
     async getFull(gameId) {
         return SqliteStore.getFull(gameId);
     },

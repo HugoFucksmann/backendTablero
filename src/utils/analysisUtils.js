@@ -30,21 +30,23 @@ function extractTimes(pgn) {
  * Parses PGN string to a verbose history array and extracts start FEN and clock times.
  */
 function parsePgn(pgn) {
-    if (!pgn) return { history: [], startFen: null, times: [] };
+    if (!pgn) return { history: [], startFen: null, times: [], headers: {} };
     try {
         const chess = new Chess();
         chess.loadPgn(pgn);
         const history = chess.history({ verbose: true });
         const times = extractTimes(pgn);
+        const headers = chess.header();
 
         return {
-            history: history,
-            startFen: chess.header().FEN || null,
-            times: times
+            history,
+            startFen: headers.FEN || null,
+            times,
+            headers,
         };
     } catch (e) {
         console.error('[Utils] PGN Parse Error:', e.message);
-        return { history: [], startFen: null, times: [] };
+        return { history: [], startFen: null, times: [], headers: {} };
     }
 }
 

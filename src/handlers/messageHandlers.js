@@ -125,6 +125,14 @@ const handlers = {
         }).catch(err => send({ type: 'error', message: err.message }));
     },
 
+    // Lightweight alternative to get_analyses: returns only an array of gameId strings,
+    // with no LIMIT. Used by GameImport to build the "analyzed" badge set efficiently.
+    'get_analysed_ids': (msg, { send }) => {
+        GameStore.getAllGameIds().then(ids => {
+            send({ type: 'analysed_ids', ids });
+        }).catch(err => send({ type: 'error', message: err.message }));
+    },
+
     'delete_analyses': (msg, { send }) => {
         const { ids } = msg;
         GameStore.delete(ids).then(() => {

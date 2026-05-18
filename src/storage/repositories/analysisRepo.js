@@ -9,8 +9,8 @@ const stmts = {
         INSERT OR REPLACE INTO analyses (
             id, gameId, username, createdAt, date, opening, eco, moveCount,
             color, win, timeControl, whiteAccuracy, blackAccuracy,
-            accuracyByPhase, labelCounts, advancedMetrics
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            accuracyByPhase, labelCounts, advancedMetrics, opponent, gameDate
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
 
     insertPhase: db.prepare(`INSERT INTO phase_accuracy (game_id, phase, accuracy) VALUES (?, ?, ?)`),
@@ -25,8 +25,12 @@ const stmts = {
 
     findByGameId: db.prepare(`SELECT * FROM analyses WHERE gameId = ?`),
     findById: db.prepare(`SELECT * FROM analyses WHERE id = ?`),
-    findAll: db.prepare(`SELECT * FROM analyses ORDER BY date DESC LIMIT ? OFFSET ?`),
+    // Order by gameDate (real match date) with fallback to date (analysis date) for old records
+    findAll: db.prepare(`SELECT * FROM analyses ORDER BY COALESCE(gameDate, date) DESC LIMIT ? OFFSET ?`),
     findFullData: db.prepare(`SELECT full_json FROM analysis_full_data WHERE game_id = ?`),
+
+    // Lightweight query — only gameIds, no LIMIT. Used for the "analyzed" badge in GameImport.
+    findAllGameIds: db.prepare(`SELECT gameId FROM analyses`),
 
     count: db.prepare(`SELECT COUNT(*) as total FROM analyses`),
 
@@ -45,7 +49,9 @@ const stmts = {
 function mapRow(row) {
     return {
         ...row,
-        win: !!row.win,
+        // win is stored as INTEGER: 1=win, 0=draw, -1=loss
+        // !!row.win would map -1 (loss) to true — BUG. Use explicit comparison.
+        win: row.win === 1 ? 1 : (row.win === 0 ? 0 : -1),
         white: { accuracy: row.whiteAccuracy },
         black: { accuracy: row.blackAccuracy },
         accuracyByPhase: JSON.parse(row.accuracyByPhase || '[]'),
@@ -81,6 +87,8 @@ const AnalysisRepo = {
                 JSON.stringify(entry.accuracyByPhase || []),
                 JSON.stringify(entry.labelCounts || {}),
                 JSON.stringify(entry.advancedMetrics || {}),
+                entry.opponent ?? null,
+                entry.gameDate ?? null,
             );
 
             // Replace normalized sub-tables
@@ -180,6 +188,15 @@ const AnalysisRepo = {
         stmts.clearAnalyses.run();
         stmts.clearPhases.run();
         stmts.clearQuality.run();
+    },
+
+    /**
+     * Returns all gameIds (platform IDs) of stored analyses — no LIMIT.
+     * Much lighter than findAll; used solely to build the "analyzed" badge set.
+     * @returns {string[]}
+     */
+    findAllGameIds() {
+        return stmts.findAllGameIds.all().map(r => r.gameId);
     },
 
     /**
