@@ -348,7 +348,7 @@ const StatsRepo = {
         const { idListClause } = buildScopeFragments(clause, params, limit);
 
         const rows = db.prepare(`
-            SELECT a.id, a.gameId, a.win, a.color, a.advancedMetrics, f.full_json
+            SELECT a.id, a.gameId, a.win, a.color, a.advancedMetrics, a.date, a.gameDate, a.opening, a.eco, f.full_json
             FROM analyses a
             LEFT JOIN analysis_full_data f ON f.game_id = a.gameId
             ${idListClause.replace('id IN', 'a.id IN')}
@@ -401,7 +401,10 @@ const StatsRepo = {
                             type: category,
                             win: row.win,
                             color: row.color,
-                            opponent
+                            opponent,
+                            date: row.gameDate || row.date,
+                            opening: row.opening,
+                            eco: row.eco
                         });
                     }
                 }
