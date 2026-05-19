@@ -73,19 +73,41 @@ db.exec(`
     );
 
     CREATE TABLE IF NOT EXISTS puzzles (
-        id               TEXT PRIMARY KEY,
-        createdAt        TEXT,
-        fen              TEXT,
-        solutionSequence TEXT,
-        initialMove      TEXT,
-        theme            TEXT,
-        difficulty       TEXT,
-        solvedCount      INTEGER DEFAULT 0
+        id                  TEXT PRIMARY KEY,
+        createdAt           TEXT,
+        fen                 TEXT,
+        solutionSequence    TEXT,
+        -- Legacy columns (kept for backwards compatibility)
+        initialMove         TEXT,
+        theme               TEXT,
+        difficulty          TEXT,
+        solvedCount         INTEGER DEFAULT 0,
+        -- Puzzle identity
+        baseFen             TEXT,
+        contextMoves        TEXT,
+        originalContinuation TEXT,
+        preBlunderFen       TEXT,
+        playedMove          TEXT,
+        label               TEXT,
+        puzzleType          TEXT,
+        mateIn              INTEGER,
+        -- Metrics
+        wpLoss              REAL,
+        preBlunderWp        REAL,
+        playerColor         TEXT,
+        gameId              TEXT,
+        ply                 INTEGER,
+        -- Enriched / mined data
+        blunderSeverity     REAL,
+        tensionIndex        REAL,
+        attackedSquares     INTEGER,
+        isOnlyMove          INTEGER,    -- stored as 0/1 (SQLite has no BOOLEAN)
+        criticalityGap      REAL,
+        tacticalMotifs      TEXT        -- JSON array
     );
 
     CREATE INDEX IF NOT EXISTS idx_date          ON analyses(date);
     CREATE INDEX IF NOT EXISTS idx_timeControl   ON analyses(timeControl);
-    CREATE INDEX IF NOT EXISTS idx_username      ON analyses(username);
     CREATE INDEX IF NOT EXISTS idx_phase_game    ON phase_accuracy(game_id);
     CREATE INDEX IF NOT EXISTS idx_quality_game  ON move_quality(game_id);
     CREATE INDEX IF NOT EXISTS idx_moves_game    ON game_moves(game_id);
@@ -97,14 +119,39 @@ db.exec(`
 // ─── Migrations (incremental, safe to re-run) ─────────────────────────────────
 
 const migrations = [
+    // analyses table
     "ALTER TABLE analyses ADD COLUMN eco TEXT",
     "ALTER TABLE analyses ADD COLUMN username TEXT",
     "ALTER TABLE analyses ADD COLUMN advancedMetrics TEXT",
     "CREATE INDEX IF NOT EXISTS idx_username ON analyses(username)",
-    // Added: opponent name and real game date (vs createdAt which is analysis date)
     "ALTER TABLE analyses ADD COLUMN opponent TEXT",
     "ALTER TABLE analyses ADD COLUMN gameDate TEXT",
     "CREATE INDEX IF NOT EXISTS idx_gameDate ON analyses(gameDate)",
+
+    // puzzles table — all new columns added after the original 8-column schema
+    "ALTER TABLE puzzles ADD COLUMN baseFen TEXT",
+    "ALTER TABLE puzzles ADD COLUMN contextMoves TEXT",
+    "ALTER TABLE puzzles ADD COLUMN originalContinuation TEXT",
+    "ALTER TABLE puzzles ADD COLUMN preBlunderFen TEXT",
+    "ALTER TABLE puzzles ADD COLUMN playedMove TEXT",
+    "ALTER TABLE puzzles ADD COLUMN label TEXT",
+    "ALTER TABLE puzzles ADD COLUMN puzzleType TEXT",
+    "ALTER TABLE puzzles ADD COLUMN mateIn INTEGER",
+    "ALTER TABLE puzzles ADD COLUMN wpLoss REAL",
+    "ALTER TABLE puzzles ADD COLUMN preBlunderWp REAL",
+    "ALTER TABLE puzzles ADD COLUMN playerColor TEXT",
+    "ALTER TABLE puzzles ADD COLUMN gameId TEXT",
+    "ALTER TABLE puzzles ADD COLUMN ply INTEGER",
+    "ALTER TABLE puzzles ADD COLUMN blunderSeverity REAL",
+    "ALTER TABLE puzzles ADD COLUMN tensionIndex REAL",
+    "ALTER TABLE puzzles ADD COLUMN attackedSquares INTEGER",
+    "ALTER TABLE puzzles ADD COLUMN isOnlyMove INTEGER",
+    "ALTER TABLE puzzles ADD COLUMN criticalityGap REAL",
+    "ALTER TABLE puzzles ADD COLUMN tacticalMotifs TEXT",
+    // puzzles indexes
+    "CREATE INDEX IF NOT EXISTS idx_puzzles_fen ON puzzles(fen)",
+    "CREATE INDEX IF NOT EXISTS idx_puzzles_gameId ON puzzles(gameId)",
+    "CREATE INDEX IF NOT EXISTS idx_puzzles_type ON puzzles(puzzleType)",
 ];
 
 for (const sql of migrations) {

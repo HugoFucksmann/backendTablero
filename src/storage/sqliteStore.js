@@ -37,7 +37,9 @@ const SqliteStore = {
     getPuzzles: () => PuzzleRepo.findAll(),
     savePuzzle: (p) => PuzzleRepo.save(p),
     deletePuzzle: (id) => PuzzleRepo.delete(id),
+    clearPuzzles: () => PuzzleRepo.clear(),
     incrementPuzzleSolved: (id) => PuzzleRepo.incrementSolved(id),
+    isPuzzleDuplicate: (fen, seq) => PuzzleRepo.isDuplicate(fen, seq),
 };
 
 module.exports = { SqliteStore };
