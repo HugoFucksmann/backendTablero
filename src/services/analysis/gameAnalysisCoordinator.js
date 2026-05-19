@@ -43,8 +43,15 @@ class GameAnalysisCoordinator {
         const times = extraInfo.times || [];
         const playerWhite = extraInfo.playerWhite || null;
         const playerBlack = extraInfo.playerBlack || null;
-        const opponent = extraInfo.opponent || null;
+        const playerColor = extraInfo.playerColor || 'white';
         const gameDate = extraInfo.gameDate || null;
+
+        // Derivar oponente: usa el campo explícito si existe,
+        // si no, lo deduce de los nombres de jugador y el color del usuario.
+        let opponent = extraInfo.opponent || null;
+        if (!opponent && (playerWhite || playerBlack)) {
+            opponent = playerColor === 'white' ? playerBlack : playerWhite;
+        }
 
         // Normalizar win: booleano (Lichess) o número (1/0/-1)
         const winNormalized = extraInfo.win === undefined || extraInfo.win === null
@@ -195,7 +202,7 @@ class GameAnalysisCoordinator {
                     eco: detectedEco,
                     moveCount: totalMoves,
                     date: new Date().toISOString(),
-                    color: extraInfo.playerColor || 'white',
+                    color: playerColor,
                     win: winNormalized,
                     timeControl: extraInfo.timeControl || null,
                     accuracyByPhase,

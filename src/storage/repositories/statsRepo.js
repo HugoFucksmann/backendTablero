@@ -178,12 +178,12 @@ const StatsRepo = {
 
         const trend = db.prepare(`
             SELECT
-                date,
+                COALESCE(gameDate, date) as date,
                 (CASE WHEN color = 'white' THEN whiteAccuracy ELSE blackAccuracy END) as accuracy
             FROM analyses
             ${idListClause}
-            ORDER BY date DESC
-        `).all(...params).reverse();
+            ORDER BY COALESCE(gameDate, date) ASC
+        `).all(...params);
 
         // ── 5. Phase accuracy ─────────────────────────────────────────────────
 
@@ -348,7 +348,7 @@ const StatsRepo = {
         const { idListClause } = buildScopeFragments(clause, params, limit);
 
         const rows = db.prepare(`
-            SELECT a.id, a.gameId, a.win, a.color, a.advancedMetrics, a.date, a.gameDate, a.opening, a.eco, f.full_json
+            SELECT a.id, a.gameId, a.win, a.color, a.advancedMetrics, a.date, a.gameDate, a.opening, a.eco, a.opponent, f.full_json
             FROM analyses a
             LEFT JOIN analysis_full_data f ON f.game_id = a.gameId
             ${idListClause.replace('id IN', 'a.id IN')}
@@ -384,14 +384,18 @@ const StatsRepo = {
                     }
 
                     if (fen && typeof fen === 'string' && fen.trim()) {
-                        let opponent = 'Desconocido';
-                        if (row.full_json) {
+                        let opponent = row.opponent;
+                        if (!opponent && row.full_json) {
                             try {
                                 const gameData = JSON.parse(row.full_json);
-                                const headers = gameData.gameHeaders || {};
-                                opponent = row.color === 'white' ? (headers.Black || 'Desconocido') : (headers.White || 'Desconocido');
+                                if (gameData.players) {
+                                    opponent = row.color === 'white' ? gameData.players.black : gameData.players.white;
+                                } else if (gameData.gameHeaders) {
+                                    opponent = row.color === 'white' ? gameData.gameHeaders.Black : gameData.gameHeaders.White;
+                                }
                             } catch (e) {}
                         }
+                        if (!opponent) opponent = 'Desconocido';
 
                         results.push({
                             gameId: row.gameId,

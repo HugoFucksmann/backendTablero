@@ -15,7 +15,7 @@ const handlers = {
     },
 
     'analyze_game': (msg, { queue, send }) => {
-        const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win, timeControl, playerWhite, playerBlack } = msg;
+        const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win, timeControl, playerWhite, playerBlack, opponent, gameDate } = msg;
         queue.analyzeGame(history, currentIndex, gameId, engineConfig, {
             onStatus: (running) => send({ type: 'status', running }),
             onProgress: (pct, label) => send({ type: 'progress', pct, label }),
@@ -27,7 +27,7 @@ const handlers = {
             onComplete: (acc) => send({ type: 'complete', accuracy: acc }),
             onCancelled: () => send({ type: 'cancelled' }),
             onError: (err) => send({ type: 'error', message: err.message }),
-        }, startFen, { playerColor, win, timeControl, playerWhite, playerBlack }).catch((err) => {
+        }, startFen, { playerColor, win, timeControl, playerWhite, playerBlack, opponent, gameDate }).catch((err) => {
             if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
         });
     },
