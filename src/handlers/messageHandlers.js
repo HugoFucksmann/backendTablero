@@ -15,7 +15,7 @@ const handlers = {
     },
 
     'analyze_game': (msg, { queue, send }) => {
-        const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win, timeControl, playerWhite, playerBlack, opponent, gameDate } = msg;
+        const { history, currentIndex, gameId, engineConfig, startFen, playerColor, win, timeControl, playerWhite, playerBlack, opponent, gameDate, times } = msg;
         queue.analyzeGame(history, currentIndex, gameId, engineConfig, {
             onStatus: (running) => send({ type: 'status', running }),
             onProgress: (pct, label) => send({ type: 'progress', pct, label }),
@@ -24,10 +24,10 @@ const handlers = {
                 type: 'opening_detected', ...data,
                 bookPlies: data.bookPlies ? Array.from(data.bookPlies) : []
             }),
-            onComplete: (acc) => send({ type: 'complete', accuracy: acc }),
+            onComplete: (acc, accuracyByPhase) => send({ type: 'complete', accuracy: acc, accuracyByPhase }),
             onCancelled: () => send({ type: 'cancelled' }),
             onError: (err) => send({ type: 'error', message: err.message }),
-        }, startFen, { playerColor, win, timeControl, playerWhite, playerBlack, opponent, gameDate }).catch((err) => {
+        }, startFen, { playerColor, win, timeControl, playerWhite, playerBlack, opponent, gameDate, times }).catch((err) => {
             if (err.name !== 'AbortError') send({ type: 'error', message: err.message });
         });
     },

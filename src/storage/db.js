@@ -62,6 +62,7 @@ db.exec(`
         remaining_time INTEGER,
         fen            TEXT,
         start_fen      TEXT,
+        error_time_class TEXT,
         PRIMARY KEY (game_id, ply),
         FOREIGN KEY(game_id) REFERENCES analyses(id) ON DELETE CASCADE
     );
@@ -127,6 +128,9 @@ const migrations = [
     "ALTER TABLE analyses ADD COLUMN opponent TEXT",
     "ALTER TABLE analyses ADD COLUMN gameDate TEXT",
     "CREATE INDEX IF NOT EXISTS idx_gameDate ON analyses(gameDate)",
+
+    // game_moves table
+    "ALTER TABLE game_moves ADD COLUMN error_time_class TEXT",
 
     // puzzles table — all new columns added after the original 8-column schema
     "ALTER TABLE puzzles ADD COLUMN baseFen TEXT",

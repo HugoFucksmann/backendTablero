@@ -68,6 +68,12 @@ function _calcAdvancedMetrics(finalMoveData, evalResults, playerColor, winNormal
             avgBlunderTime: 0,
             ratio: 1,
         },
+        errorTimeStats: {
+            timePressureCount: 0,
+            precipitationCount: 0,
+            overthinkingCount: 0,
+            totalErrors: 0,
+        },
     };
 
     let maxUserWp = 0, maxWpFen = null, maxWpFenPly = null;
@@ -81,6 +87,21 @@ function _calcAdvancedMetrics(finalMoveData, evalResults, playerColor, winNormal
     for (let i = 0; i < finalMoveData.length; i++) {
         const m = finalMoveData[i];
         if (!m) continue;
+
+        // ── Time error stats tracking ─────────────────────────────────────────
+        const isUserError = m.isWhiteMove === isUserWhite && 
+            (m.label === 'Error' || m.label === 'Error grave' || m.label === 'Imprecisión' || 
+             ['Error', 'Error grave', 'Imprecisión', 'Insta-move Blunder', 'Deep-think Blunder', 'Time Pressure Error'].includes(m.label));
+        if (isUserError) {
+            metrics.errorTimeStats.totalErrors++;
+            if (m.errorTimeClass === 'time_pressure') {
+                metrics.errorTimeStats.timePressureCount++;
+            } else if (m.errorTimeClass === 'precipitation') {
+                metrics.errorTimeStats.precipitationCount++;
+            } else if (m.errorTimeClass === 'overthinking') {
+                metrics.errorTimeStats.overthinkingCount++;
+            }
+        }
 
         // ── Win probability tracking ──────────────────────────────────────────
         const evalResult = evalResults[i + 1];

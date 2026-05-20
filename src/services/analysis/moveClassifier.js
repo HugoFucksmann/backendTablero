@@ -26,12 +26,23 @@ class MoveClassifier {
             : EvaluationEngine.classifyMove(before.wp, after.wp, isWhiteMove, isEngineBest);
 
         // Lógica de clasificación extendida por tiempo
-        const isBlunder = label === 'Error' || label === 'Error grave';
-        if (isBlunder && moveTime !== undefined) {
+        let errorTimeClass = null;
+        const isBlunder = label === 'Error' || label === 'Error grave' || label === 'Imprecisión';
+        if (isBlunder) {
+            if (remainingTime !== undefined && remainingTime !== null && remainingTime < 40) {
+                errorTimeClass = 'time_pressure';
+            } else if (moveTime !== undefined && moveTime !== null && moveTime < 3) {
+                errorTimeClass = 'precipitation';
+            } else if (moveTime !== undefined && moveTime !== null && moveTime > 30) {
+                errorTimeClass = 'overthinking';
+            }
+        }
+
+        if (isBlunder && moveTime !== undefined && moveTime !== null) {
             if (moveTime < 3) label = 'Insta-move Blunder';
             else if (moveTime > 30) label = 'Deep-think Blunder';
             
-            if (remainingTime !== undefined && remainingTime < 10) {
+            if (remainingTime !== undefined && remainingTime !== null && remainingTime < 10) {
                 label = 'Time Pressure Error';
             }
         }
@@ -39,7 +50,7 @@ class MoveClassifier {
         let wpLoss = isWhiteMove ? (before.wp - after.wp) : (after.wp - before.wp);
         if (isEngineBest || wpLoss < 0) wpLoss = 0;
 
-        return { index: ply, label, isBook, wpLoss, isWhiteMove, moveTime, remainingTime };
+        return { index: ply, label, isBook, wpLoss, isWhiteMove, moveTime, remainingTime, errorTimeClass };
     }
 
 

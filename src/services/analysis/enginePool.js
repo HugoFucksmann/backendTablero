@@ -22,15 +22,17 @@ class EnginePool {
         this._multiPv = engineConfig.multiPv ?? 1;
         this._ownsEngines = !prebuiltEngines;
 
-        const numEngines = Math.max(1, engineConfig.threads ?? 1);
-        const hashPerEngine = Math.max(16, Math.floor((engineConfig.hash ?? 128) / numEngines));
+        const totalThreads = engineConfig.threads ?? 1;
+        const numEngines = Math.min(3, Math.max(1, totalThreads));
+        const threadsPerEngine = Math.max(1, Math.floor(totalThreads / numEngines));
+        const hashPerEngine = Math.min(512, Math.max(16, Math.floor((engineConfig.hash ?? 128) / numEngines)));
 
         this.engines = prebuiltEngines
             ?? Array.from({ length: numEngines }, () => new StockfishProcess());
 
         this._perEngineConfig = {
             ...engineConfig,
-            threads: 1,
+            threads: threadsPerEngine,
             hash: hashPerEngine,
         };
     }

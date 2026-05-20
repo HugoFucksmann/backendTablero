@@ -217,7 +217,7 @@ class GameAnalysisCoordinator {
                 console.error('[Game] Failed to save analysis:', e.message);
             }
 
-            onComplete?.(accuracy);
+            onComplete?.(accuracy, accuracyByPhase);
             onProgress?.(100, 'Analysis completed');
 
         } finally {
@@ -241,7 +241,7 @@ class GameAnalysisCoordinator {
 
         if (times?.length > ply) {
             remainingTime = times[ply];
-            if (ply >= 2 && times[ply - 2] !== undefined) {
+            if (ply >= 2 && times[ply - 2] !== undefined && times[ply - 2] !== null && times[ply] !== undefined && times[ply] !== null) {
                 moveTime = times[ply - 2] - times[ply];
             }
         }
@@ -254,8 +254,8 @@ class GameAnalysisCoordinator {
 
         if (!result) return;
 
-        const { label, isBook, wpLoss, isWhiteMove } = result;
-        onMoveResult?.({ index: ply, label, isBook });
+        const { label, isBook, wpLoss, isWhiteMove, errorTimeClass } = result;
+        onMoveResult?.({ index: ply, label, isBook, errorTimeClass });
 
         let phase = 'Medio Juego';
         if (isBook) {
@@ -267,7 +267,7 @@ class GameAnalysisCoordinator {
 
         finalMoveData[ply] = {
             label, isWhiteMove, wpLoss, isBook, phase,
-            moveTime, remainingTime,
+            moveTime, remainingTime, errorTimeClass,
             // positions[ply+1] = posición DESPUÉS del movimiento ply
             fen: positions[ply + 1],
         };

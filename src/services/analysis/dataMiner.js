@@ -45,15 +45,26 @@ const DataMiner = {
     /**
      * Determina si la línea principal es un 'Only Move' comparando con la segunda mejor.
      */
-    detectOnlyMove(line1Score, line2Score, isWhiteTurn) {
-        if (line1Score === undefined || line1Score === null || line2Score === undefined || line2Score === null) {
-            return { isOnlyMove: false, criticalityGap: 0 };
+    detectOnlyMove(line1, line2, isWhiteTurn) {
+        if (!line1) {
+            return { isOnlyMove: false, criticalityGap: 0, discard: true };
+        }
+
+        const wp1 = ChessMath.cpToWhiteWinProb(line1.score ?? 0, line1.mate ?? null, !isWhiteTurn);
+        const solverWp1 = isWhiteTurn ? wp1 : 1 - wp1;
+
+        // Si no hay segunda línea legal, es jugada única legal
+        if (!line2) {
+            // Regla de negocio 2: Solo es Only Move si la única jugada legal mantiene una posición ganadora o salvable (> 0.45)
+            // Si la única jugada legal es un desastre (solverWp1 <= 0.45), descartamos el puzzle.
+            if (solverWp1 > 0.45) {
+                return { isOnlyMove: true, criticalityGap: 1.0 };
+            } else {
+                return { isOnlyMove: false, criticalityGap: 0, discard: true };
+            }
         }
         
-        const wp1 = ChessMath.cpToWhiteWinProb(line1Score, null, !isWhiteTurn);
-        const wp2 = ChessMath.cpToWhiteWinProb(line2Score, null, !isWhiteTurn);
-        
-        const solverWp1 = isWhiteTurn ? wp1 : 1 - wp1;
+        const wp2 = ChessMath.cpToWhiteWinProb(line2.score ?? 0, line2.mate ?? null, !isWhiteTurn);
         const solverWp2 = isWhiteTurn ? wp2 : 1 - wp2;
         
         const gap = solverWp1 - solverWp2;

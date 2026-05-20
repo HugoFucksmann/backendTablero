@@ -5,7 +5,12 @@ const db = require('../db');
 // ─── Prepared statements ──────────────────────────────────────────────────────
 
 const stmts = {
-    findAll: db.prepare(`SELECT * FROM puzzles ORDER BY createdAt DESC`),
+    findAll: db.prepare(`
+        SELECT p.*, a.opponent, a.win, COALESCE(a.gameDate, a.date) as gameDate
+        FROM puzzles p
+        LEFT JOIN analyses a ON p.gameId = a.gameId
+        ORDER BY p.createdAt DESC
+    `),
 
     // Duplicate check by fen + solutionSequence — done in SQL, not in-memory.
     findDuplicate: db.prepare(`

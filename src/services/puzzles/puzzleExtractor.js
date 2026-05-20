@@ -54,16 +54,17 @@ class PuzzleExtractor {
         const threads = engineConfig.threads ?? 1;
         const hash = engineConfig.hash ?? 128;
 
-        const numEngines = Math.max(1, threads);
-        const hashPerEngine = Math.max(16, Math.floor(hash / numEngines));
+        const numEngines = Math.min(3, Math.max(1, threads));
+        const threadsPerEngine = Math.max(1, Math.floor(threads / numEngines));
+        const hashPerEngine = Math.min(256, Math.max(16, Math.floor(hash / numEngines)));
 
-        console.log(`[Puzzle] Starting extraction: ${games.length} game(s) | Depth: ${depth} | Parallel Engines: ${numEngines}`);
+        console.log(`[Puzzle] Starting extraction: ${games.length} game(s) | Depth: ${depth} | Parallel Engines: ${numEngines} | Threads per Engine: ${threadsPerEngine} | Hash per Engine: ${hashPerEngine}MB`);
 
         const engines = Array.from({ length: numEngines }, () => new StockfishProcess());
         const cleanupEngines = () => engines.forEach(e => e.destroy());
 
         try {
-            await Promise.all(engines.map(e => e.init({ ...engineConfig, threads: 1, hash: hashPerEngine, multiPv: 1 })));
+            await Promise.all(engines.map(e => e.init({ ...engineConfig, threads: threadsPerEngine, hash: hashPerEngine, multiPv: 1 })));
 
             let totalExtracted = 0;
             for (let i = 0; i < games.length; i++) {
@@ -106,9 +107,41 @@ class PuzzleExtractor {
         const positions = buildPositions(history, startFen);
         engines.forEach(e => e.newGame());
 
-        // Phase 1: Scan for blunders using light analysis
-        const lightEvalResults = await this._runLightScan(positions, engines, signal);
-        if (signal.aborted) return 0;
+        let lightEvalResults = null;
+
+        // Intentar bypass de base de datos para Fase 1 si la partida ya fue analizada a suficiente profundidad
+        try {
+            const { SqliteStore } = require('../../storage/sqliteStore');
+            const fullData = SqliteStore.getFull(gameId);
+
+            if (fullData && Array.isArray(fullData.evaluations) && fullData.evaluations.length > 0) {
+                // Comprobamos la profundidad de análisis previo usando la primera evaluación válida
+                const sampleEval = fullData.evaluations.find(e => e && e.lines && e.lines[0] && typeof e.lines[0].depth === 'number');
+                const prevDepth = sampleEval ? sampleEval.lines[0].depth : 0;
+
+                if (prevDepth >= 16) {
+                    console.log(`[Puzzle] Database Bypass: Game ${gameId} has existing analysis at sufficient depth (${prevDepth}). Skipping Light Scan.`);
+                    lightEvalResults = fullData.evaluations.map(e => {
+                        if (!e) return { wp: 0.5, bestMove: null, mate: null };
+                        return {
+                            wp: e.wp ?? 0.5,
+                            bestMove: e.bestMove ?? null,
+                            mate: e.mate ?? null
+                        };
+                    });
+                } else {
+                    console.log(`[Puzzle] Game ${gameId} has analysis but at insufficient depth (${prevDepth} < 16). Running full Light Scan.`);
+                }
+            }
+        } catch (err) {
+            console.warn('[Puzzle] Failed to check database for bypass:', err.message);
+        }
+
+        if (!lightEvalResults) {
+            // Phase 1: Scan for blunders using light analysis
+            lightEvalResults = await this._runLightScan(positions, engines, signal);
+            if (signal.aborted) return 0;
+        }
 
         // Phase 2: Filter and validate candidates with heavy analysis
         const candidates = this._identifyCandidates(history, positions, lightEvalResults);
@@ -207,6 +240,7 @@ class PuzzleExtractor {
                         mate: raw.mate ?? null,
                         line1Score: raw.lines?.[0]?.score ?? raw.score ?? 0,
                         line2Score: raw.lines?.[1]?.score ?? null,
+                        lines: raw.lines || []
                     };
 
                     const wpLoss = c.isWhiteMove ? (c.beforeEval.wp - afterHeavy.wp) : (afterHeavy.wp - c.beforeEval.wp);
@@ -218,7 +252,12 @@ class PuzzleExtractor {
 
                     const severity = DataMiner.calculateBlunderSeverity(c.beforeEval.wp, afterHeavy.wp, c.isWhiteMove);
                     const tension = DataMiner.calculateTension(c.preBlunderFen);
-                    const onlyMove = DataMiner.detectOnlyMove(afterHeavy.line1Score, afterHeavy.line2Score, !c.isWhiteMove);
+                    const onlyMove = DataMiner.detectOnlyMove(
+                        afterHeavy.lines[0] ?? { score: raw.score, mate: raw.mate },
+                        afterHeavy.lines[1] ?? null,
+                        !c.isWhiteMove
+                    );
+                    if (onlyMove.discard) continue; // Descartar puzzles inválidos de jugada única desastrosa
                     const motifs = DataMiner.extractTacticalMotifs(c.puzzleFen, validation.solutionSequence);
 
                     this._savePuzzle(c, validation, history, positions, gameId, wpLoss, { severity, tension, onlyMove, motifs });

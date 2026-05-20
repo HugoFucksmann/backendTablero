@@ -15,7 +15,7 @@ const stmts = {
 
     insertPhase: db.prepare(`INSERT INTO phase_accuracy (game_id, phase, accuracy) VALUES (?, ?, ?)`),
     insertQuality: db.prepare(`INSERT INTO move_quality (game_id, label, count) VALUES (?, ?, ?)`),
-    insertMove: db.prepare(`INSERT INTO game_moves (game_id, ply, move_san, evaluation, label, move_time, remaining_time, fen, start_fen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    insertMove: db.prepare(`INSERT OR REPLACE INTO game_moves (game_id, ply, move_san, evaluation, label, move_time, remaining_time, fen, start_fen, error_time_class) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     insertFullData: db.prepare(`INSERT OR REPLACE INTO analysis_full_data (game_id, full_json) VALUES (?, ?)`),
 
     deletePhases: db.prepare(`DELETE FROM phase_accuracy  WHERE game_id = ?`),
@@ -119,6 +119,7 @@ const AnalysisRepo = {
                         move.remaining_time ?? null,
                         move.fen,
                         move.start_fen,
+                        move.error_time_class ?? null,
                     );
                 }
             }

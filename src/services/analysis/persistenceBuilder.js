@@ -57,6 +57,11 @@ function build({
                 .filter(idx => finalMoveData[idx]?.label)
                 .map(idx => [idx, finalMoveData[idx].label])
         ),
+        errorTimeClasses: Object.fromEntries(
+            completedIndexes
+                .filter(idx => finalMoveData[idx]?.errorTimeClass)
+                .map(idx => [idx, finalMoveData[idx].errorTimeClass])
+        ),
         movePhases: Object.fromEntries(
             completedIndexes
                 .filter(idx => finalMoveData[idx]?.phase)
@@ -87,6 +92,7 @@ function build({
             label: m.label,
             moveTime: m.moveTime,
             remaining_time: m.remainingTime,
+            error_time_class: m.errorTimeClass ?? null,
             // fen: posición DESPUÉS del movimiento (para miniaturas)
             fen: positions[idx + 1] ?? positions[idx],
             // start_fen: posición ANTES del movimiento (para explorador)

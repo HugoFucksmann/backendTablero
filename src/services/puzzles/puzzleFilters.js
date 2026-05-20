@@ -73,24 +73,18 @@ function extractForcedSequence(pvString, startFen, maxMoves = MAX_SEQUENCE_DEPTH
             if (isMate) break; // puzzle ends at checkmate regardless of length
 
             if (!isMatePuzzle) {
-
                 if (sequence.length >= MIN_SEQUENCE_MOVES && sequence.length % 2 !== 0 && !isCapture && !givesCheck) break;
             }
         }
-
 
         if (sequence.length > 0 && sequence.length % 2 === 0) {
             sequence.pop();
         }
 
-        if (sequence.length === 0 && candidates.length > 0) {
-            return candidates.slice(0, 1);
-        }
-
         return sequence;
-    } catch {
-
-        return candidates.slice(0, 1);
+    } catch (e) {
+        console.error('[PuzzleFilter] Error building forced sequence:', e.message);
+        return [];
     }
 }
 
@@ -105,6 +99,9 @@ function evaluatePuzzleCandidate(ctx) {
 
 
     if (allowsMate(afterEval.mate)) {
+        if (afterEval.mate === 1) {
+            return { accept: false, reason: 'trivial mate in 1' };
+        }
         const pv = afterEval.pv || '';
         const seq = extractForcedSequence(pv, puzzleFen, MAX_SEQUENCE_DEPTH, true);
         if (seq.length === 0) return { accept: false, reason: 'allows_mate but no valid sequence' };

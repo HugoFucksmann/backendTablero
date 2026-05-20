@@ -25,6 +25,9 @@ class StockfishProcess {
 
     async init(config = {}) {
         const merged = { ...this._config, ...config };
+        if (typeof merged.hash === 'number') {
+            merged.hash = Math.min(1024, Math.max(16, merged.hash));
+        }
 
         if (this._engine.state === EngineState.IDLE) {
             const prev = this._config;
