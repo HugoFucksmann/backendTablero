@@ -38,12 +38,12 @@ class MoveClassifier {
             }
         }
 
-        if (isBlunder && moveTime !== undefined && moveTime !== null) {
-            if (moveTime < 3) label = 'Insta-move Blunder';
-            else if (moveTime > 30) label = 'Deep-think Blunder';
-            
+        if (isBlunder) {
             if (remainingTime !== undefined && remainingTime !== null && remainingTime < 10) {
                 label = 'Time Pressure Error';
+            } else if (moveTime !== undefined && moveTime !== null) {
+                if (moveTime < 3) label = 'Insta-move Blunder';
+                else if (moveTime > 30) label = 'Deep-think Blunder';
             }
         }
 

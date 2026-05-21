@@ -22,9 +22,9 @@ class EnginePool {
         this._multiPv = engineConfig.multiPv ?? 1;
         this._ownsEngines = !prebuiltEngines;
 
-        const totalThreads = engineConfig.threads ?? 1;
-        const numEngines = Math.min(3, Math.max(1, totalThreads));
-        const threadsPerEngine = Math.max(1, Math.floor(totalThreads / numEngines));
+        const totalThreads = engineConfig.threads ?? Math.max(1, require('os').cpus().length - 1);
+        const numEngines = Math.max(1, totalThreads);
+        const threadsPerEngine = 1;
         const hashPerEngine = Math.min(512, Math.max(16, Math.floor((engineConfig.hash ?? 128) / numEngines)));
 
         this.engines = prebuiltEngines
