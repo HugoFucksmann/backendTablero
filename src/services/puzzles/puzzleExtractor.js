@@ -54,17 +54,37 @@ class PuzzleExtractor {
         const threads = engineConfig.threads ?? 1;
         const hash = engineConfig.hash ?? 128;
 
-        const numEngines = Math.min(3, Math.max(1, threads));
-        const threadsPerEngine = Math.max(1, Math.floor(threads / numEngines));
-        const hashPerEngine = Math.min(256, Math.max(16, Math.floor(hash / numEngines)));
+        const numEngines = Math.max(1, threads);
 
-        console.log(`[Puzzle] Starting extraction: ${games.length} game(s) | Depth: ${depth} | Parallel Engines: ${numEngines} | Threads per Engine: ${threadsPerEngine} | Hash per Engine: ${hashPerEngine}MB`);
+        const baseHash = Math.floor(hash / numEngines);
+        const hashRemainder = hash % numEngines;
+
+        const enginesConfigs = Array.from({ length: numEngines }, (_, idx) => {
+            const engineHash = baseHash + (idx < hashRemainder ? 1 : 0);
+            const cappedHash = Math.min(2048, Math.max(16, engineHash));
+
+            return {
+                ...engineConfig,
+                threads: 1,
+                hash: cappedHash,
+                multiPv: 1
+            };
+        });
+
+        const totalAllocatedThreads = enginesConfigs.reduce((sum, cfg) => sum + cfg.threads, 0);
+        const totalAllocatedHash = enginesConfigs.reduce((sum, cfg) => sum + cfg.hash, 0);
+
+        const enginesDescription = enginesConfigs
+            .map((cfg, idx) => `M${idx + 1}: ${cfg.threads}h/${cfg.hash}MB`)
+            .join(', ');
+
+        console.log(`[Puzzle] Starting extraction: ${games.length} game(s) | Depth: ${depth} | Parallel Engines: ${numEngines} (${enginesDescription} | Total: ${totalAllocatedThreads} hilos, ${totalAllocatedHash}MB RAM)`);
 
         const engines = Array.from({ length: numEngines }, () => new StockfishProcess());
         const cleanupEngines = () => engines.forEach(e => e.destroy());
-
+        
         try {
-            await Promise.all(engines.map(e => e.init({ ...engineConfig, threads: threadsPerEngine, hash: hashPerEngine, multiPv: 1 })));
+            await Promise.all(engines.map((e, idx) => e.init(enginesConfigs[idx])));
 
             let totalExtracted = 0;
             for (let i = 0; i < games.length; i++) {

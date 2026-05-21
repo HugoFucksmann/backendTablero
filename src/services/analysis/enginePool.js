@@ -23,18 +23,27 @@ class EnginePool {
         this._ownsEngines = !prebuiltEngines;
 
         const totalThreads = engineConfig.threads ?? 1;
-        const numEngines = Math.min(3, Math.max(1, totalThreads));
-        const threadsPerEngine = Math.max(1, Math.floor(totalThreads / numEngines));
-        const hashPerEngine = Math.min(512, Math.max(16, Math.floor((engineConfig.hash ?? 128) / numEngines)));
+        const numEngines = Math.max(1, totalThreads);
+
+        const baseHash = Math.floor((engineConfig.hash ?? 128) / numEngines);
+        const hashRemainder = (engineConfig.hash ?? 128) % numEngines;
+
+        this._engineConfigs = Array.from({ length: numEngines }, (_, idx) => {
+            const engineHash = baseHash + (idx < hashRemainder ? 1 : 0);
+            const cappedHash = Math.min(2048, Math.max(16, engineHash));
+
+            return {
+                ...engineConfig,
+                threads: 1,
+                hash: cappedHash,
+            };
+        });
+
+        this.totalAllocatedThreads = this._engineConfigs.reduce((sum, cfg) => sum + cfg.threads, 0);
+        this.totalAllocatedHash = this._engineConfigs.reduce((sum, cfg) => sum + cfg.hash, 0);
 
         this.engines = prebuiltEngines
             ?? Array.from({ length: numEngines }, () => new StockfishProcess());
-
-        this._perEngineConfig = {
-            ...engineConfig,
-            threads: threadsPerEngine,
-            hash: hashPerEngine,
-        };
     }
 
     /**
@@ -44,7 +53,7 @@ class EnginePool {
     async init() {
         if (!this._ownsEngines) return;
         await Promise.all(
-            this.engines.map(e => e.init(this._perEngineConfig))
+            this.engines.map((e, idx) => e.init(this._engineConfigs[idx]))
         );
     }
 

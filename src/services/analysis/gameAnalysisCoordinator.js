@@ -63,10 +63,15 @@ class GameAnalysisCoordinator {
         // ── Pool de engines ───────────────────────────────────────────────────
         const pool = new EnginePool(engineConfig, prebuiltEngines);
 
+        const enginesDescription = pool._engineConfigs
+            .map((cfg, idx) => `M${idx + 1}: ${cfg.threads}h/${cfg.hash}MB`)
+            .join(', ');
+
         console.log(
             `[Game] Starting analysis: id=${gameId} | ${history.length} moves | ` +
             `Depth: ${depth} | MultiPV: ${multiPv} | ` +
-            `Engines: ${pool.count} | Reused: ${!pool.ownsEngines}`
+            `Engines: ${pool.count} (${enginesDescription} | Total: ${pool.totalAllocatedThreads} hilos, ${pool.totalAllocatedHash}MB RAM) | ` +
+            `Reused: ${!pool.ownsEngines}`
         );
 
         try {
