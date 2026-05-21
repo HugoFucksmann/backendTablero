@@ -3,9 +3,10 @@
     "version": "1.0.0",
     "description": "Backend local nativo para análisis de ajedrez",
     "main": "service.js",
-    "type": "commonjs",
+    "type": "module",
     "scripts": {
-        "start": "node src/server.js"
+        "build": "tsc",
+        "start": "node dist/server.js"
     },
     "dependencies": {
         "better-sqlite3": "^12.9.0",
@@ -13,5 +14,13 @@
         "dotenv": "^17.4.2",
         "node-fetch": "^2.7.0",
         "ws": "^8.16.0"
+    },
+    "devDependencies": {
+        "@types/better-sqlite3": "^7.6.13",
+        "@types/node": "^25.9.1",
+        "@types/node-fetch": "^2.6.13",
+        "@types/ws": "^8.18.1",
+        "ts-node": "^10.9.2",
+        "typescript": "^6.0.3"
     }
 }
