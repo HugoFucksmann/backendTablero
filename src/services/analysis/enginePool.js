@@ -22,7 +22,6 @@ class EnginePool {
         this._multiPv = engineConfig.multiPv ?? 1;
         this._ownsEngines = !prebuiltEngines;
 
-<<<<<<< HEAD
         const totalThreads = engineConfig.threads ?? 1;
         const numEngines = Math.max(1, totalThreads);
 
@@ -42,12 +41,6 @@ class EnginePool {
 
         this.totalAllocatedThreads = this._engineConfigs.reduce((sum, cfg) => sum + cfg.threads, 0);
         this.totalAllocatedHash = this._engineConfigs.reduce((sum, cfg) => sum + cfg.hash, 0);
-=======
-        const totalThreads = engineConfig.threads ?? Math.max(1, require('os').cpus().length - 1);
-        const numEngines = Math.max(1, totalThreads);
-        const threadsPerEngine = 1;
-        const hashPerEngine = Math.min(512, Math.max(16, Math.floor((engineConfig.hash ?? 128) / numEngines)));
->>>>>>> cc4a7edef69c714bc9f5a89261cfa1fcb4a39def
 
         this.engines = prebuiltEngines
             ?? Array.from({ length: numEngines }, () => new StockfishProcess());
