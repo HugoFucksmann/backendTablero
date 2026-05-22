@@ -34,15 +34,19 @@ async function detectOpeningsLocalTSV({
         const cachedBookPlies = cache.bookPlies instanceof Set
             ? cache.bookPlies as Set<number> : new Set<number>(cache.bookPlies as any);
         (async () => {
-            for (let i = 0; i < history.length; i++) {
-                if (signal?.aborted) break;
-                onPlyResolved(i, cachedBookPlies.has(i));
-                if (i % 10 === 0) {
-                    await new Promise(r => setImmediate(r));
+            try {
+                for (let i = 0; i < history.length; i++) {
+                    if (signal?.aborted) break;
+                    onPlyResolved(i, cachedBookPlies.has(i));
+                    if (i % 10 === 0) {
+                        await new Promise(r => setImmediate(r));
+                    }
                 }
-            }
-            if (!signal?.aborted) {
-                onOpeningDetected?.({ ...cache, bookPlies: cachedBookPlies });
+                if (!signal?.aborted) {
+                    onOpeningDetected?.({ ...cache, bookPlies: cachedBookPlies });
+                }
+            } catch (err: any) {
+                console.error('[Opening] Error resolving openings from cache:', err.message);
             }
         })();
         return;

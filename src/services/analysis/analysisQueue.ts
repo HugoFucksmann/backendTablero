@@ -15,7 +15,7 @@ export interface GameAnalysisCallbacks {
     onProgress?: (pct: number, label: string) => void;
     onMoveResult?: (data: any) => void;
     onOpeningDetected?: (data: any) => void;
-    onComplete?: (accuracy: any, accuracyByPhase?: any) => void;
+    onComplete?: (accuracy: any, accuracyByPhase?: any, win?: number | null) => void;
     onCancelled?: () => void;
     onError?: (err: any) => void;
 }

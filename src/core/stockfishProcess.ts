@@ -1,5 +1,5 @@
 import { cpus } from 'os';
-import { EngineProcess, EngineState, EngineStateType } from './engineProcess.js';
+import { EngineProcess, EngineState } from './engineProcess.js';
 import { parseInfoLine, parseBestmoveLine } from './uciParser.js';
 
 export interface StockfishConfig {
@@ -139,6 +139,11 @@ export class StockfishProcess {
                 settled = true;
                 signal?.removeEventListener('abort', onAbort);
 
+                if (err && err.name !== 'AbortError' && this._engine.lineHandler === searchHandler) {
+                    this._engine.lineHandler = null;
+                    restoreOnDied();
+                }
+
                 if (err) reject(err);
                 else if (result) resolve(result);
             };
@@ -215,6 +220,7 @@ export class StockfishProcess {
                 if (line === 'readyok') {
                     if (signal?.aborted || this._engine.state === EngineState.STOPPING) {
                         this._engine.state = EngineState.IDLE;
+                        this._engine.lineHandler = null;
                         restoreOnDied();
                         if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
                         settle(new DOMException('Aborted', 'AbortError'), null);
@@ -234,6 +240,7 @@ export class StockfishProcess {
             } else {
                 if (signal?.aborted || (this._engine.state as string) === EngineState.STOPPING) {
                     this._engine.state = EngineState.IDLE;
+                    this._engine.lineHandler = null;
                     restoreOnDied();
                     if (this._idleResolve) { this._idleResolve(); this._idleResolve = null; }
                     settle(new DOMException('Aborted', 'AbortError'), null);

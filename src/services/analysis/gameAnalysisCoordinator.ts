@@ -1,22 +1,38 @@
 import { EvaluationEngine } from './evaluationRules.js';
-import { OpeningService } from '../openings/openingService.js';
-import { buildPositions, buildAnalysisOrder } from '../../utils/analysisUtils.js';
+import { OpeningService, DetectedOpeningResult } from '../openings/openingService.js';
+import { buildPositions, buildAnalysisOrder, EngineLine, EvaluationResult, ClassifiedMoveData } from '../../utils/analysisUtils.js';
 import { MoveClassifier } from './moveClassifier.js';
 import { PhaseDetector } from '../../utils/phaseDetector.js';
 import { GameStore } from '../../storage/gameStore.js';
-import { EnginePool } from './enginePool.js';
+import { EnginePool, EnginePoolConfig } from './enginePool.js';
 import { AnalysisWorkerLoop } from './analysisWorkerLoop.js';
-import { calculate as calcMetrics } from './advancedMetricsCalculator.js';
+import { calculate as calcMetrics, PhaseAccuracyResult } from './advancedMetricsCalculator.js';
 import { build as buildPersistence } from './persistenceBuilder.js';
 import { StockfishProcess } from '../../core/stockfishProcess.js';
+import { Move } from 'chess.js';
+
+export interface MoveAnalysisProgress {
+    index: number;
+    score: number | string;
+    mate: number | null;
+    bestMove: string;
+    lines: EngineLine[];
+}
+
+export interface MoveAnalysisClassification {
+    index: number;
+    label: string;
+    isBook: boolean;
+    errorTimeClass: 'time_pressure' | 'precipitation' | 'overthinking' | null;
+}
 
 export interface GameAnalysisCallbacks {
     onStatus?: (active: boolean) => void;
     onProgress?: (pct: number, label: string) => void;
-    onMoveResult?: (data: any) => void;
-    onOpeningDetected?: (data: any) => void;
-    onComplete?: (accuracy: any, accuracyByPhase?: any) => void;
-    onError?: (err: any) => void;
+    onMoveResult?: (data: MoveAnalysisProgress | MoveAnalysisClassification) => void;
+    onOpeningDetected?: (data: DetectedOpeningResult) => void;
+    onComplete?: (accuracy: { white: number; black: number }, accuracyByPhase?: PhaseAccuracyResult[], win?: number | null) => void;
+    onError?: (err: Error) => void;
     signal: AbortSignal;
     startFen?: string | null;
 }
@@ -37,10 +53,10 @@ export class GameAnalysisCoordinator {
     constructor() { }
 
     public async run(
-        history: any[],
+        history: (string | Move)[],
         currentIndex: number,
         gameId: string,
-        engineConfig: any = {},
+        engineConfig: EnginePoolConfig = {},
         callbacks: GameAnalysisCallbacks,
         extraInfo: GameAnalysisExtraInfo = {},
         prebuiltEngines: StockfishProcess[] | null = null
@@ -100,12 +116,13 @@ export class GameAnalysisCoordinator {
             const totalMoves = history.length;
             const bookStatus = new Array<boolean | null>(totalMoves).fill(null);
             const completedSet = new Set<number>();
-            const finalMoveData = new Array<any>(totalMoves);
+            const finalMoveData = new Array<ClassifiedMoveData | undefined>(totalMoves);
             const labelCounts: Record<string, number> = {};
+
             const openingState = { done: false };
 
             // evalResultsRef se rellena de forma lazy por el worker loop
-            const evalResultsRef: any[] = [];
+            const evalResultsRef: (EvaluationResult | undefined)[] = [];
 
             // Clasificar una jugada en cuanto tenga apertura + evaluación
             const tryClassify = (ply: number) => {
@@ -207,9 +224,12 @@ export class GameAnalysisCoordinator {
                     finalMoveData,
                     completedSet,
                     accuracy,
+                    accuracyByPhase,
                     opening: { name: detectedOpening, eco: detectedEco },
                     players: { white: playerWhite, black: playerBlack },
                     startFen,
+                    win: winNormalized,
+                    playerColor,
                 });
 
                 await GameStore.save({
@@ -236,7 +256,7 @@ export class GameAnalysisCoordinator {
                 console.error('[Game] Failed to save analysis:', e.message);
             }
 
-            onComplete?.(accuracy, accuracyByPhase);
+            onComplete?.(accuracy, accuracyByPhase, winNormalized);
             onProgress?.(100, 'Analysis completed');
 
         } finally {
@@ -254,14 +274,14 @@ export class GameAnalysisCoordinator {
      */
     private _tryClassify(
         ply: number,
-        history: any[],
+        history: (string | Move)[],
         positions: string[],
-        evalResults: any[],
+        evalResults: (EvaluationResult | undefined)[],
         bookStatus: (boolean | null)[],
         openingState: { done: boolean },
-        finalMoveData: any[],
+        finalMoveData: (ClassifiedMoveData | undefined)[],
         completedSet: Set<number>,
-        onMoveResult: ((data: any) => void) | undefined,
+        onMoveResult: ((data: MoveAnalysisProgress | MoveAnalysisClassification) => void) | undefined,
         labelCounts: Record<string, number>,
         times: number[]
     ): void {

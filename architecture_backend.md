@@ -5,7 +5,7 @@
 
 ## ⚠️ Reglas Críticas Antes de Tocar Cualquier Cosa
 
-1. **Fuente de Verdad Única** — El backend es ahora el único encargado de la lógica de ajedrez. El frontend ha sido limpiado de archivos duplicados como `evaluationRules.js`, `openingService.js` y `chessMath.js`.
+1. **Fuente de Verdad Única** — El backend es ahora el único encargado de la lógica de ajedrez. El frontend ha sido limpiado de archivos duplicados como `evaluationRules.ts`, `openingService.ts` y `chessMath.ts`.
 2. **Coherencia de Versiones** — Aunque el front ya no tenga lógica, cualquier cambio en la clasificación o precisión debe documentarse aquí para que la UI sepa qué labels esperar.
 3. **El engine es una máquina de estados** — nunca envíes comandos UCI sin verificar el estado actual. Enviar `go` mientras está en `SEARCHING` corrompe la salida.
 4. **Cada sesión WebSocket tiene su propia instancia de engine** — no hay estado compartido entre clientes.
@@ -17,35 +17,46 @@
 
 ```mermaid
 graph TD
-    Service[service.js] --> AQ[analysisQueue.js]
-    Service --> PE[puzzleExtractor.js]
-    Service --> PS[puzzleStore.js]
-    Service --> OB[openingBook.js]
+    Server[server.ts] --> MH[messageHandlers.ts]
+    MH --> AQ[analysisQueue.ts]
+    MH --> PE[puzzleExtractor.ts]
+    MH --> PS[puzzleStore.ts]
+    MH --> GS[gameStore.ts]
+    MH --> OB[openingBook.ts]
 
-    AQ --> SP[stockfishProcess.js]
-    AQ --> GAC[gameAnalysisCoordinator.js]
-    AQ --> AU[analysisUtils.js]
+    AQ --> SP[stockfishProcess.ts]
+    AQ --> GAC[gameAnalysisCoordinator.ts]
+    AQ --> AU[analysisUtils.ts]
+    AQ --> EPool[enginePool.ts]
 
-    GAC --> OS[openingService.js]
-    GAC --> MC[moveClassifier.js]
-    GAC --> ER[evaluationRules.js]
-    GAC --> CM[chessMath.js]
+    GAC --> OS[openingService.ts]
+    GAC --> MC[moveClassifier.ts]
+    GAC --> ER[evaluationRules.ts]
+    GAC --> AMC[advancedMetricsCalculator.ts]
+    GAC --> PB[persistenceBuilder.ts]
+    GAC --> GS
     GAC --> AU
 
     PE --> SP
     PE --> PS
-    PE --> CM
     PE --> ER
-    PE --> AU
+    PE --> DM[dataMiner.ts]
+    PE --> PF[puzzleFilters.ts]
+    PE --> SS[sqliteStore.ts]
 
-    SP --> EP[engineProcess.js]
-    SP --> UP[uciParser.js]
+    SP --> EP[engineProcess.ts]
+    SP --> UP[uciParser.ts]
 
     OS --> OB
     MC --> ER
+    PS --> SS
+    GS --> SS
+    SS --> AR[analysisRepo.ts]
+    SS --> PR[puzzleRepo.ts]
+    SS --> STR[statsRepo.ts]
 ```
 
-**Radio de impacto:** Cambiar `chessMath.js` o `evaluationRules.js` afecta todos los resultados de análisis. Cambiar `engineProcess.js` afecta toda la comunicación con el engine. Cambiar `uciParser.js` solo afecta extracción de datos crudos.
+**Radio de impacto:** Cambiar `chessMath.ts` o `evaluationRules.ts` afecta todos los resultados de análisis. Cambiar `engineProcess.ts` afecta toda la comunicación con el engine. Cambiar `uciParser.ts` solo afecta la extracción de datos crudos del motor. Cambiar `sqliteStore.ts` o los repositorios bajo `storage/repositories` afecta a toda la persistencia del sistema.
 
 ---
 
@@ -58,16 +69,27 @@ graph TD
 | `type` | Campos Requeridos | Campos Opcionales |
 | :--- | :--- | :--- |
 | `analyze_position` | `fen`, `moveIndex` | `threads`, `hash`, `multiPv`, `depth` |
-| `analyze_game` | `history`, `currentIndex`, `gameId` | `engineConfig: { depth, multiPv, threads, hash, lichessToken }` |
+| `analyze_game` | `history`, `currentIndex`, `gameId` | `engineConfig: { depth, multiPv, threads, hash }`, `startFen`, `playerColor`, `win`, `timeControl`, `playerWhite`, `playerBlack`, `opponent`, `gameDate`, `times` |
+| `analyze_games` | `games: Array` (partidas a analizar) | `engineConfig: { depth, multiPv, threads, hash }` |
 | `cancel` | — | — |
+| `clear_cache` | — | `gameId` |
 | `extract_puzzles` | `games: Array<{ pgn, history, gameId }>` | `engineConfig: { depth, threads, hash }` |
 | `cancel_extraction` | — | — |
 | `get_puzzles` | — | — |
 | `delete_puzzle` | `id` | — |
 | `puzzle_solved` | `id` | — |
 | `clear_puzzles` | — | — |
+| `get_stats` | — | `filters`, `requestId` |
+| `get_stat_details` | `category` | `filters`, `requestId` |
+| `get_analyses` | — | `offset`, `limit` |
+| `get_analysed_ids` | — | — |
+| `delete_analyses` | `ids: string[]` | — |
+| `get_full_analysis` | `gameId` | — |
+| `get_move_explorer` | `fen` | — |
+| `get_book_moves` | `fen` | — |
+| `get_server_config` | — | — |
 
-> **`puzzle_solved`:** Llama a `PuzzleStore.incrementSolved(id)` → busca el puzzle en `puzzles.json` por ID → incrementa `solvedCount` en 1 → guarda el archivo.
+> **`puzzle_solved`:** Llama a `PuzzleStore.incrementSolved(id)` → delega a `SqliteStore.incrementPuzzleSolved(id)` para persistir el incremento de `solvedCount` directamente en la base de datos SQLite.
 
 #### Schema: campo `history` en `analyze_game`
 Array de objetos generados por `chess.history({ verbose: true })` de chess.js:
@@ -91,8 +113,7 @@ Array<{
 - Si `history` es nulo pero existe `pgn` → el extractor parsea el PGN para generar el historial.
 - Si ambos fallan → el juego se omite silenciosamente.
 
-#### Campo `lichessToken` en `analyze_game`
-Token de autenticación de Lichess. Se inyecta como `Authorization: Bearer <token>` en las peticiones al Lichess Explorer API. Permite evitar rate limiting (HTTP 429) y acceder a bases de datos de partidas específicas del usuario.
+---
 
 ### Mensajes Salientes (Servidor → Cliente)
 
@@ -100,9 +121,9 @@ Token de autenticación de Lichess. Se inyecta como `Authorization: Bearer <toke
 | :--- | :--- | :--- |
 | `position_progress` | `{ score, mate, bestMove, moveIndex, lines: Line[] }` | Streaming del engine. `score` en escala −10 a 10. |
 | `position_result` | `{ score, mate, bestMove, moveIndex, lines: Line[] }` | Resultado final de posición única. |
-| `move_result` | `{ index, label, score, mate, bestMove, lines: Line[], isBook }` | Resultado por ply durante `analyze_game`. |
+| `move_result` | `{ index, label, score, mate, bestMove, lines: Line[], isBook, errorTimeClass }` | Resultado por ply durante `analyze_game`. |
 | `opening_detected` | `{ openingName, ecoCode, openingPly, bookPlies: number[] }` | Metadatos de apertura. |
-| `complete` | `{ accuracy: { white: number, black: number } }` | Precisión final. |
+| `complete` | `{ accuracy: { white: number, black: number }, accuracyByPhase: any[] }` | Precisión final de la partida. |
 | `status` | `{ running: boolean }` | Estado del engine. |
 | `progress` | `{ pct: number, label: string }` | Progreso general de la tarea actual. |
 | `cancelled` | — | Confirmación de cancelación de análisis. |
@@ -113,7 +134,22 @@ Token de autenticación de Lichess. Se inyecta como `Authorization: Bearer <toke
 | `puzzle_list` | `{ puzzles: Puzzle[] }` | Lista de puzzles guardados. |
 | `puzzle_deleted` | `{ id, success }` | Confirmación de borrado. |
 | `puzzles_cleared` | — | Confirmación de limpieza de librería. |
-| `error` | `{ message: string }` | Notificación de error. |
+| `error` | `{ message: string, requestId?: string }` | Notificación de error. |
+| `batch_analysis_started` | `{ gameIndex, total, gameId }` | Inicio de análisis en lote para un juego. |
+| `batch_analysis_progress` | `{ gameIndex, pct, label }` | Progreso parcial de un juego en el lote. |
+| `batch_analysis_game_complete`| `{ gameIndex, accuracy }` | Fin de análisis de un juego del lote. |
+| `batch_analysis_complete` | `{ total }` | Fin de todo el análisis en lote. |
+| `batch_analysis_cancelled` | — | Cancelación del análisis en lote. |
+| `batch_move_result` | `{ gameIndex, index, label, isBook, errorTimeClass }` | Resultado por jugada en análisis por lote. |
+| `stats_data` | `{ requestId, stats }` | Datos de estadísticas agregadas del dashboard. |
+| `stat_details_data` | `{ requestId, category, details }` | Detalle específico por categoría de estadística. |
+| `analyses_list` | `{ analyses, offset, limit, total }` | Partidas analizadas paginadas en memoria. |
+| `analysed_ids` | `{ ids }` | Listado rápido de IDs de partidas ya analizadas. |
+| `analyses_deleted` | `{ ids }` | Confirmación de eliminación en lote de análisis. |
+| `full_analysis_data` | `{ gameId, data }` | JSON del análisis completo de una partida. |
+| `move_explorer_data` | `{ fen, whitePerspective: any, blackPerspective: any }` | Frecuencias y resultados agregados para un FEN. |
+| `book_moves` | `{ fen, moves, opening, eco, source }` | Opciones de teoría desde el libro local. |
+| `server_config` | `{ openingSource, bookSize }` | Parámetros del servidor activo al conectar. |
 
 #### Schema: tipo `Line`
 ```typescript
@@ -186,7 +222,7 @@ DEAD ──────────► STARTING
 3. El engine queda en `IDLE` listo para el siguiente comando.
 
 **ACK Asíncrono:**
-El servidor WebSocket (`service.js`) **nunca** envía el mensaje `{"type": "cancelled"}` de forma síncrona dentro del bloque `case 'cancel'`.
+El servidor WebSocket (`src/server.ts` y `messageHandlers.ts`) **nunca** envía el mensaje `{"type": "cancelled"}` de forma síncrona dentro del bloque `case 'cancel'`.
 En su lugar, confía en que `signal.aborted` rompa los loops de ejecución activos. Una vez que el loop en curso confirma la interrupción (ej. catch de `AbortError`), lanza los callbacks `onCancelled` o `onExtractionCancelled`, los cuales finalmente emiten el ACK al frontend. 
 Esto evita una condición de carrera ("double-cancelled race") donde el frontend podría asumir erróneamente que una tarea murió antes de que el motor haya liberado sus procesos de red y CPU.
 
@@ -205,10 +241,9 @@ Esto evita una condición de carrera ("double-cancelled race") donde el frontend
 ## 🌍 Opening Service
 
 - **Libro Local:** Indexa archivos TSV (a.tsv a e.tsv) en memoria al startup. Indexa **todas las posiciones intermedias** de cada línea, no solo la final.
-- **Fallback Lichess:** Endpoint `explorer.lichess.ovh/lichess`.
-- **Cache:** Mantiene un cache de las últimas 100 partidas consultadas.
-- **Stop Logic:** Se detiene tras 2 movimientos no-libro consecutivos o en ply 30.
-- **Umbral:** `MIN_THEORY_GAMES = 230,000` partidas para considerar un movimiento como "teoría".
+- **Modo Exclusivo:** No cuenta con fallbacks externos (ej: Lichess Explorer API). Utiliza 100% el libro TSV local.
+- **Cache:** Mantiene un caché de las últimas 100 partidas consultadas.
+- **Límite de Profundidad:** El análisis se ejecuta secuencialmente sobre todo el historial de movimientos de la partida hasta el límite físico estricto de `MAX_BOOK_PLY = 30` plies.
 
 ---
 
@@ -226,7 +261,7 @@ visualScore = cp / 100    // rango: [-10.0, 10.0] (clamped)
 ```
 Si hay mate, se asigna +/- 10.0.
 
-### Umbrales de Clasificación (`evaluationRules.js`)
+### Umbrales de Clasificación (`evaluationRules.ts`)
 Calculados sobre la pérdida de WP (`wpBefore - wpAfter`).
 
 | Label | Condición |
@@ -248,29 +283,48 @@ acc = Math.max(0, 103.1668 * Math.exp(-0.07354 * lossPct) - 3.1669)
 
 ---
 
-## 🗄️ Schema de Puzzles (`puzzles.json`)
+## 🗄️ Esquema de Tabla SQLite: `puzzles`
 
-```typescript
-{
-  puzzles: Array<{
-    id:               string,           // UUID
-    createdAt:        string,           // ISO Date
-    solvedCount:      number,
-    fen:              string,           // FEN DESPUÉS del blunder
-    solutionSequence: string[],         // Movimientos UCI (ej: ["e2e4", "d7d5"])
-    playedMove:       string,           // Movimiento que fue el blunder (UCI)
-    label:            string,           // "Error" | "Error grave"
-    wpLoss:           number,           // Pérdida de WP (0.0 a 1.0)
-    playerColor:      "white" | "black",
-    gameId:           string,
-    ply:              number
-  }>
-}
+El almacenamiento de puzzles está 100% migrado a la base de datos **SQLite** (tabla `puzzles`), gestionado por `SqliteStore` y `PuzzleRepo`.
+
+```sql
+CREATE TABLE IF NOT EXISTS puzzles (
+    id                   TEXT PRIMARY KEY,  -- UUID auto-generado
+    createdAt            TEXT,              -- ISO Date
+    fen                  TEXT,              -- FEN DESPUÉS del blunder (posición para resolver)
+    solutionSequence     TEXT,              -- Movimientos UCI de solución concatenados (JSON array stringified)
+    solvedCount          INTEGER DEFAULT 0, -- Veces resuelto por el usuario
+    
+    -- Contexto de Partida y Jugada
+    baseFen              TEXT,              -- FEN 2 plies antes de la jugada del blunder
+    contextMoves         TEXT,              -- Movimientos previos inmediatos (JSON array)
+    originalContinuation TEXT,              -- Continuación original de la partida (JSON array)
+    preBlunderFen        TEXT,              -- FEN antes de jugar el blunder
+    playedMove           TEXT,              -- El movimiento UCI erróneo que gatilló el puzzle (blunder)
+    label                TEXT,              -- Clasificación de la jugada errónea ("Error" | "Error grave")
+    puzzleType           TEXT,              -- Tipo de puzzle ("mate" | "tactical_blunder")
+    mateIn               INTEGER,           -- Movimientos para dar mate (null si es táctico general)
+    
+    -- Métricas de Evaluación
+    wpLoss               REAL,              -- Pérdida de probabilidad de victoria (0.0 a 1.0)
+    preBlunderWp         REAL,              -- Probabilidad de victoria antes del blunder (0.0 a 1.0)
+    playerColor          TEXT,              -- Color del jugador que resuelve ("white" | "black")
+    gameId               TEXT,              -- ID de la partida origen
+    ply                  INTEGER,           -- Ply de la jugada errónea
+    
+    -- Minería de Datos Enriquecida (DataMiner.ts)
+    blunderSeverity      REAL,              -- Severidad matemática del error
+    tensionIndex         REAL,              -- Índice de tensión posicional (piezas en conflicto)
+    attackedSquares      INTEGER,           -- Cantidad de casillas bajo ataque simultáneo
+    isOnlyMove           INTEGER,           -- 1 si la primera jugada de la solución era la única salvación, 0 si no
+    criticalityGap       REAL,              -- Distancia de evaluación con el segundo mejor movimiento
+    tacticalMotifs       TEXT               -- Motivos tácticos detectados en formato JSON array stringified
+);
 ```
 
 ---
 
-## 🛠️ Utilidades: `analysisUtils.js`
+## 🛠️ Utilidades: `analysisUtils.ts`
 
 | Función | Descripción |
 | :--- | :--- |

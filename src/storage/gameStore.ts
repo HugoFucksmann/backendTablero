@@ -15,14 +15,14 @@ export const GameStore = {
     },
 
     async save(analysis: any, fullData: any = null): Promise<any> {
-        // Check if we already have an analysis for this gameId to avoid duplicates
+
         const existing = SqliteStore.getByGameId(analysis.gameId);
-        
+
         const entry = {
             id: existing ? existing.id : randomUUID(),
             createdAt: existing ? existing.createdAt : new Date().toISOString(),
             ...analysis,
-            fullData // Pasamos los datos completos al SqliteStore
+            fullData
         };
 
         SqliteStore.save(entry);
@@ -52,8 +52,7 @@ export const GameStore = {
     },
 
     async runIntegrityCheck(): Promise<void> {
-        // Ya no es necesario el chequeo de archivos huérfanos ya que todo reside en SQL 
-        // con claves foráneas y borrado en cascada.
+
         console.log('[GameStore] Integrity check (SQL-only mode): OK');
     }
 };

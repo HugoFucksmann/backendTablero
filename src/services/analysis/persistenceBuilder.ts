@@ -1,14 +1,20 @@
+import { Move } from 'chess.js';
+import { EvaluationResult, ClassifiedMoveData } from '../../utils/analysisUtils.js';
+
 export interface BuildParams {
     gameId: string;
-    history: any[];
+    history: (string | Move)[];
     positions: string[];
-    evalResults: any[];
-    finalMoveData: any[];
+    evalResults: (EvaluationResult | undefined)[];
+    finalMoveData: (ClassifiedMoveData | undefined)[];
     completedSet: Set<number>;
     accuracy: { white: number; black: number };
+    accuracyByPhase: { phase: string; accuracy: number }[];
     opening: { name: string; eco: string };
     players: { white: string | null; black: string | null };
     startFen: string | null | undefined;
+    win: number | null;
+    playerColor: 'white' | 'black';
 }
 
 export interface PersistenceResult {
@@ -17,21 +23,26 @@ export interface PersistenceResult {
 }
 
 export function build({
-    gameId,
     history,
     positions,
     evalResults,
     finalMoveData,
     completedSet,
     accuracy,
+    accuracyByPhase,
     opening,
     players,
     startFen,
+    win,
+    playerColor,
 }: BuildParams): PersistenceResult {
     const completedIndexes = Array.from(completedSet);
 
     const fullData = {
         accuracy,
+        accuracyByPhase: accuracyByPhase ?? [],
+        win: win ?? null,
+        playerColor: playerColor ?? 'white',
         opening: { name: opening.name, eco: opening.eco },
         players: { white: players.white, black: players.black },
         startFen: startFen || null,
@@ -44,32 +55,35 @@ export function build({
         moveEvaluations: Object.fromEntries(
             completedIndexes
                 .filter(idx => finalMoveData[idx]?.label)
-                .map(idx => [idx, finalMoveData[idx].label])
+                .map(idx => [idx, finalMoveData[idx]!.label])
         ),
         errorTimeClasses: Object.fromEntries(
             completedIndexes
                 .filter(idx => finalMoveData[idx]?.errorTimeClass)
-                .map(idx => [idx, finalMoveData[idx].errorTimeClass])
+                .map(idx => [idx, finalMoveData[idx]!.errorTimeClass])
         ),
         movePhases: Object.fromEntries(
             completedIndexes
                 .filter(idx => finalMoveData[idx]?.phase)
-                .map(idx => [idx, finalMoveData[idx].phase])
+                .map(idx => [idx, finalMoveData[idx]!.phase])
         ),
         bestMoves: Object.fromEntries(
             completedIndexes
                 .filter(idx => evalResults[idx + 1]?.bestMove)
-                .map(idx => [idx, evalResults[idx + 1].bestMove])
+                .map(idx => [idx, evalResults[idx + 1]!.bestMove])
         ),
         alternativeLines: Object.fromEntries(
             completedIndexes
                 .filter(idx => evalResults[idx + 1]?.lines)
-                .map(idx => [idx, evalResults[idx + 1].lines])
+                .map(idx => [idx, evalResults[idx + 1]!.lines])
         ),
     };
 
     const movesToSave = completedIndexes.map(idx => {
         const m = finalMoveData[idx];
+        if (!m) {
+            throw new Error(`finalMoveData[${idx}] is undefined during persistence build`);
+        }
         const historyMove = history[idx];
         const san = typeof historyMove === 'string' ? historyMove : historyMove.san;
         const evalResult = evalResults[idx + 1];

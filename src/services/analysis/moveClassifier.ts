@@ -1,11 +1,13 @@
 import { EvaluationEngine } from './evaluationRules.js';
 import { MAX_BOOK_PLY } from '../openings/openingService.js';
+import { Move } from 'chess.js';
+import { EvaluationResult } from '../../utils/analysisUtils.js';
 
 export interface ClassifyInput {
     ply: number;
-    history: any[];
+    history: (string | Move)[];
     positions: string[];
-    evalResults: any[];
+    evalResults: (EvaluationResult | undefined)[];
     bookStatus: (boolean | null)[];
     openingDone: boolean;
     moveTime?: number | null;

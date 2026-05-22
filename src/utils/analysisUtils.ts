@@ -103,6 +103,26 @@ export interface EngineLine {
     [key: string]: any;
 }
 
+export interface EvaluationResult {
+    wp: number;
+    score: number | string;
+    mate: number | null;
+    bestMove: string;
+    lines: EngineLine[];
+}
+
+export interface ClassifiedMoveData {
+    label: string;
+    isWhiteMove: boolean;
+    wpLoss: number;
+    isBook: boolean;
+    phase: string;
+    moveTime?: number;
+    remainingTime?: number;
+    errorTimeClass: 'time_pressure' | 'precipitation' | 'overthinking' | null;
+    fen: string;
+}
+
 /**
  * Maps engine PV lines to a format the UI expects.
  */

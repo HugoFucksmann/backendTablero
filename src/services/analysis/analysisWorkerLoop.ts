@@ -1,6 +1,7 @@
 import { ChessMath } from '../../utils/chessMath.js';
 import { mapLines } from '../../utils/analysisUtils.js';
 import { StockfishProcess } from '../../core/stockfishProcess.js';
+import { EvaluationResult } from '../../utils/analysisUtils.js';
 
 export interface AnalysisWorkerLoopParams {
     positions: string[];
@@ -9,7 +10,7 @@ export interface AnalysisWorkerLoopParams {
     multiPv: number;
     signal: AbortSignal;
     order: number[];
-    onEvalReady?: (posIdx: number, evalResult: any) => void;
+    onEvalReady?: (posIdx: number, evalResult: EvaluationResult) => void;
     onProgress?: (evaluated: number, total: number) => void;
 }
 
@@ -20,7 +21,7 @@ export class AnalysisWorkerLoop {
     private _multiPv: number;
     private _signal: AbortSignal;
     private _order: number[];
-    private _onEvalReady?: (posIdx: number, evalResult: any) => void;
+    private _onEvalReady?: (posIdx: number, evalResult: EvaluationResult) => void;
     private _onProgress?: (evaluated: number, total: number) => void;
 
     constructor({

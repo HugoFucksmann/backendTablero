@@ -27,3 +27,4 @@ Thumbs.db
 # Engine binaries (Keep the directory, ignore binaries)
 engine/*
 !engine/.gitkeep
+dist/

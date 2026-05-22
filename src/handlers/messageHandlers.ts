@@ -36,7 +36,7 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
                 ...data,
                 bookPlies: data.bookPlies ? Array.from(data.bookPlies) : []
             }),
-            onComplete: (acc, accuracyByPhase) => send({ type: 'complete', accuracy: acc, accuracyByPhase }),
+            onComplete: (acc, accuracyByPhase, win) => send({ type: 'complete', accuracy: acc, accuracyByPhase, win }),
             onCancelled: () => send({ type: 'cancelled' }),
             onError: (err) => send({ type: 'error', message: err.message }),
         }, startFen, { playerColor, win, timeControl, playerWhite, playerBlack, opponent, gameDate, times }).catch((err) => {
@@ -63,7 +63,7 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
         });
     },
 
-    'cancel': (msg, { queue, puzzleExtractor }) => {
+    'cancel': (_msg, { queue, puzzleExtractor }) => {
         queue.cancel();
         puzzleExtractor.cancel();
     },
@@ -89,11 +89,11 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
         });
     },
 
-    'cancel_extraction': (msg, { puzzleExtractor }) => {
+    'cancel_extraction': (_msg, { puzzleExtractor }) => {
         puzzleExtractor.cancel();
     },
 
-    'get_puzzles': (msg, { send }) => {
+    'get_puzzles': (_msg, { send }) => {
         const puzzles = PuzzleStore.getAll();
         send({ type: 'puzzle_list', puzzles });
     },
@@ -103,7 +103,7 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
         send({ type: 'puzzle_deleted', id: msg.id, success: deleted });
     },
 
-    'clear_puzzles': (msg, { send }) => {
+    'clear_puzzles': (_msg, { send }) => {
         PuzzleStore.clear();
         send({ type: 'puzzles_cleared' });
     },
@@ -139,7 +139,7 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
 
     // Lightweight alternative to get_analyses: returns only an array of gameId strings,
     // with no LIMIT. Used by GameImport to build the "analyzed" badge set efficiently.
-    'get_analysed_ids': (msg, { send }) => {
+    'get_analysed_ids': (_msg, { send }) => {
         GameStore.getAllGameIds().then(ids => {
             send({ type: 'analysed_ids', ids });
         }).catch(err => send({ type: 'error', message: err.message }));
@@ -176,9 +176,7 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
             .catch(err => send({ type: 'error', message: err.message }));
     },
 
-    /**
-     * Devuelve los movimientos del libro Polyglot para una posición FEN.
-     */
+
     'get_book_moves': (msg, { send }) => {
         const { fen } = msg;
         if (!fen || typeof fen !== 'string') {
@@ -219,7 +217,7 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
     /**
      * Devuelve la configuración activa del servidor (modo de apertura, etc.).
      */
-    'get_server_config': (msg, { send }) => {
+    'get_server_config': (_msg, { send }) => {
         send({
             type: 'server_config',
             openingSource: OpeningService.source,

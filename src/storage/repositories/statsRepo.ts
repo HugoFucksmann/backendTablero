@@ -189,7 +189,7 @@ function buildWhereClause(filters: StatsFilters = {}): { clause: string; params:
 /**
  * Builds the SQL fragments used to scope all sub-queries to the same filtered set.
  */
-function buildScopeFragments(whereClause: string, params: any[], limit: number | null): { idListClause: string; gameIdListClause: string } {
+function buildScopeFragments(whereClause: string, limit: number | null): { idListClause: string; gameIdListClause: string } {
     const limitSql = limit ? `LIMIT ${limit}` : '';
     const subQuery = `SELECT id FROM analyses ${whereClause} ORDER BY COALESCE(gameDate, date) DESC ${limitSql}`;
     return {
@@ -207,7 +207,7 @@ export const StatsRepo = {
     getAggregatedStats(filters: StatsFilters = {}): AggregatedStatsResult {
         const { clause, params } = buildWhereClause(filters);
         const limit = (filters.count && filters.count !== 'all') ? parseInt(filters.count) : null;
-        const { idListClause, gameIdListClause } = buildScopeFragments(clause, params, limit);
+        const { idListClause, gameIdListClause } = buildScopeFragments(clause, limit);
 
         // ── 1. General ────────────────────────────────────────────────────────
 
@@ -443,7 +443,7 @@ export const StatsRepo = {
 
         const { clause, params } = buildWhereClause(filters);
         const limit = (filters.count && filters.count !== 'all') ? parseInt(filters.count) : null;
-        const { idListClause } = buildScopeFragments(clause, params, limit);
+        const { idListClause } = buildScopeFragments(clause, limit);
 
         const rows = db.prepare(`
             SELECT a.id, a.gameId, a.win, a.color, a.advancedMetrics, a.date, a.gameDate, a.opening, a.eco, a.opponent, f.full_json

@@ -10,7 +10,6 @@ export interface EnginePoolConfig {
 
 export class EnginePool {
     public readonly engines: StockfishProcess[];
-    private _multiPv: number;
     private _ownsEngines: boolean;
     private _perEngineConfig: EnginePoolConfig;
 
@@ -19,7 +18,6 @@ export class EnginePool {
      * @param prebuiltEngines  - Engines ya inicializados (modo batch).
      */
     constructor(engineConfig: EnginePoolConfig, prebuiltEngines: StockfishProcess[] | null = null) {
-        this._multiPv = engineConfig.multiPv ?? 1;
         this._ownsEngines = !prebuiltEngines;
 
         const totalThreads = engineConfig.threads ?? Math.max(1, os.cpus().length - 1);
