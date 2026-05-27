@@ -446,16 +446,14 @@ export const StatsRepo = {
         const { idListClause } = buildScopeFragments(clause, limit);
 
         const rows = db.prepare(`
-            SELECT a.id, a.gameId, a.win, a.color, a.advancedMetrics, a.date, a.gameDate, a.opening, a.eco, a.opponent, f.full_json
+            SELECT a.id, a.gameId, a.win, a.color, a.advancedMetrics, a.date, a.gameDate, a.opening, a.eco, a.opponent
             FROM analyses a
-            LEFT JOIN analysis_full_data f ON f.game_id = a.gameId
             ${idListClause.replace('id IN', 'a.id IN')}
             AND a.advancedMetrics IS NOT NULL
         `).all(...params) as {
             id: string; gameId: string; win: number; color: string;
             advancedMetrics: string; date: string; gameDate: string | null;
             opening: string; eco: string | null; opponent: string | null;
-            full_json: string | null;
         }[];
 
         // Looks up the FEN stored after a move
@@ -485,18 +483,7 @@ export const StatsRepo = {
                     }
 
                     if (fen && typeof fen === 'string' && fen.trim()) {
-                        let opponent = row.opponent;
-                        if (!opponent && row.full_json) {
-                            try {
-                                const gameData = JSON.parse(row.full_json);
-                                if (gameData.players) {
-                                    opponent = row.color === 'white' ? gameData.players.black : gameData.players.white;
-                                } else if (gameData.gameHeaders) {
-                                    opponent = row.color === 'white' ? gameData.gameHeaders.Black : gameData.gameHeaders.White;
-                                }
-                            } catch (e) {}
-                        }
-                        if (!opponent) opponent = 'Desconocido';
+                        const opponent = row.opponent || 'Desconocido';
 
                         results.push({
                             gameId: row.gameId,

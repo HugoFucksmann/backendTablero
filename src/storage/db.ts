@@ -18,6 +18,12 @@ if (!existsSync(DATA_DIR)) {
 const db = new Database(DB_PATH);
 db.pragma('foreign_keys = ON');
 
+// ESTO CAMBIA TODO EL RENDIMIENTO EN DISCO:
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+db.pragma('temp_store = MEMORY');
+db.pragma('cache_size = -64000'); // 64MB cache
+
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 db.exec(`
@@ -168,5 +174,60 @@ for (const sql of migrations) {
     }
 }
 
+// ─── Self-Healing Data Migration ──────────────────────────────────────────────
+
+try {
+    const nullRows = db.prepare(`
+        SELECT id, gameId, color 
+        FROM analyses 
+        WHERE opponent IS NULL OR gameDate IS NULL
+    `).all() as { id: string; gameId: string; color: string }[];
+
+    if (nullRows.length > 0) {
+        console.log(`[Database] Starting self-healing migration for ${nullRows.length} records...`);
+        const updateStmt = db.prepare(`UPDATE analyses SET opponent = ?, gameDate = ? WHERE id = ?`);
+        const getFullJson = db.prepare(`SELECT full_json FROM analysis_full_data WHERE game_id = ?`);
+        
+        const transaction = db.transaction((rows: typeof nullRows) => {
+            for (const row of rows) {
+                let opponent = 'Desconocido';
+                let gameDate = null;
+                const fullRow = getFullJson.get(row.gameId) as { full_json: string } | undefined;
+                if (fullRow?.full_json) {
+                    try {
+                        const gameData = JSON.parse(fullRow.full_json);
+                        if (gameData.players) {
+                            opponent = row.color === 'white' ? gameData.players.black : gameData.players.white;
+                        } else if (gameData.gameHeaders) {
+                            opponent = row.color === 'white' ? gameData.gameHeaders.Black : gameData.gameHeaders.White;
+                        }
+                        gameDate = gameData.gameHeaders?.UTCDate || gameData.gameHeaders?.Date || null;
+                    } catch (e) {
+                        console.error(`[Database] Failed to parse full_json for self-healing, gameId: ${row.gameId}`, e);
+                    }
+                }
+                updateStmt.run(opponent, gameDate, row.id);
+            }
+        });
+        
+        transaction(nullRows);
+        console.log(`[Database] ✅ Self-healing migration completed successfully.`);
+    }
+} catch (err: any) {
+    console.error('[Database] ❌ Self-healing migration failed:', err.message);
+}
+
+// ─── Database Maintenance & Optimization ──────────────────────────────────────
+
+try {
+    console.log('[Database] Running vacuum and optimization...');
+    db.pragma('vacuum');
+    db.pragma('optimize');
+    console.log('[Database] ✅ Database vacuum and optimization completed.');
+} catch (err: any) {
+    console.error('[Database] Maintenance error:', err.message);
+}
+
 export default db;
 export type DatabaseInstance = typeof db;
+

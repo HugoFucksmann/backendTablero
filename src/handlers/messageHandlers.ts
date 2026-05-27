@@ -132,8 +132,11 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
 
     'get_analyses': (msg, { send }) => {
         const { offset = 0, limit = 50 } = msg;
-        GameStore.getAll(offset, limit).then(analyses => {
-            send({ type: 'analyses_list', analyses, offset, limit, total: analyses.length });
+        Promise.all([
+            GameStore.getAll(offset, limit),
+            GameStore.count()
+        ]).then(([analyses, total]) => {
+            send({ type: 'analyses_list', analyses, offset, limit, total });
         }).catch(err => send({ type: 'error', message: err.message }));
     },
 

@@ -10,6 +10,10 @@ export const GameStore = {
         return SqliteStore.getAllGameIds();
     },
 
+    async count(): Promise<number> {
+        return SqliteStore.count();
+    },
+
     async getFull(gameId: string): Promise<any> {
         return SqliteStore.getFull(gameId);
     },
