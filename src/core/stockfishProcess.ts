@@ -7,6 +7,8 @@ export interface StockfishConfig {
     hash: number;
     multiPv: number;
     depth: number;
+    limitStrength?: boolean;
+    elo?: number;
 }
 
 export const DEFAULT_CONFIG: StockfishConfig = {
@@ -14,6 +16,8 @@ export const DEFAULT_CONFIG: StockfishConfig = {
     hash: 128,
     multiPv: 1,
     depth: 18,
+    limitStrength: false,
+    elo: 1350,
 };
 
 export interface AnalysisProgressLine {
@@ -79,6 +83,14 @@ export class StockfishProcess {
                 if (merged.multiPv !== prev.multiPv) {
                     console.log(`[Engine] Updating MultiPV: ${prev.multiPv} -> ${merged.multiPv}`);
                     this._engine.send(`setoption name MultiPV value ${merged.multiPv}`);
+                }
+                if (merged.limitStrength !== prev.limitStrength) {
+                    console.log(`[Engine] Updating UCI_LimitStrength: ${prev.limitStrength} -> ${merged.limitStrength}`);
+                    this._engine.send(`setoption name UCI_LimitStrength value ${merged.limitStrength ?? false}`);
+                }
+                if (merged.elo !== prev.elo) {
+                    console.log(`[Engine] Updating UCI_Elo: ${prev.elo} -> ${merged.elo}`);
+                    this._engine.send(`setoption name UCI_Elo value ${merged.elo ?? 1350}`);
                 }
                 this._config = merged;
             }
@@ -292,6 +304,12 @@ export class StockfishProcess {
                             this._engine.send(`setoption name Threads value ${this._config.threads}`);
                             this._engine.send(`setoption name Hash value ${this._config.hash}`);
                             this._engine.send(`setoption name MultiPV value ${this._config.multiPv}`);
+                            if (this._config.limitStrength) {
+                                this._engine.send(`setoption name UCI_LimitStrength value true`);
+                                this._engine.send(`setoption name UCI_Elo value ${this._config.elo ?? 1350}`);
+                            } else {
+                                this._engine.send(`setoption name UCI_LimitStrength value false`);
+                            }
                             this._engine.send('isready');
                         }
                         if (line === 'readyok') {
