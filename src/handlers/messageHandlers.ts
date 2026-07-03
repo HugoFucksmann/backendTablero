@@ -116,7 +116,7 @@ const handlers: Record<string, (msg: any, context: ClientMessageContext) => void
         const { filters = {}, requestId } = msg;
         GameStore.getStats(filters).then(stats => {
             if (!stats) {
-                send({ type: 'stats_data', requestId, stats: { games: [], total: 0, avgAcc: 0, accuracyByPhase: [], moveQuality: [] } });
+                send({ type: 'stats_data', requestId, stats: { empty: true } });
             } else {
                 send({ type: 'stats_data', requestId, stats });
             }
